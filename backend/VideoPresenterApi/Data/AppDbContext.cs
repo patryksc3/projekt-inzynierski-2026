@@ -6,6 +6,7 @@ namespace VideoPresenterApi.Data;
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
+    public DbSet<Device> Devices => Set<Device>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -19,6 +20,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         user.HasIndex(u => u.Login)
             .IsUnique();
         user.Property(u => u.PasswordHash)
+            .HasMaxLength(512)
+            .IsRequired();
+
+        var device = modelBuilder.Entity<Device>();
+
+        device.ToTable("Devices");
+        device.HasKey(d => d.Id);
+        device.Property(d => d.Name)
+            .HasMaxLength(128)
+            .IsRequired();
+        device.Property(d => d.CredentialHash)
             .HasMaxLength(512)
             .IsRequired();
     }
