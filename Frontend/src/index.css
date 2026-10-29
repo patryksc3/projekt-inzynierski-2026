@@ -1,0 +1,81 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'DM Sans Variable', sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--card);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: #202023;
+  --color-secondary: var(--surface-raised);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--surface-raised);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--surface-hover);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: #d4838e;
+  --color-border: var(--border);
+  --color-input: #414146;
+  --color-ring: var(--brand);
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+:root {
+  font-family: var(--font-sans), sans-serif;
+  color-scheme: dark;
+  color: var(--foreground);
+  background: var(--background);
+  --background: #19191c;
+  --foreground: #ededf0;
+  --card: #222226;
+  --primary: #e0e0e6;
+  --surface: #222226;
+  --surface-sidebar: #1d1d21;
+  --surface-raised: #303034;
+  --surface-hover: #38383d;
+  --border: #35353d;
+  --text-muted: #aaaab6;
+  --brand: #b69be8;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    margin: 0;
+    min-width: 280px;
+  }
+  button,
+  a,
+  input {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled),
+  a {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  button,
+  a,
+  input {
+    outline-offset: 4px;
+  }
+  ::selection {
+    background: #70588f;
+    color: #fff;
+  }
+}
