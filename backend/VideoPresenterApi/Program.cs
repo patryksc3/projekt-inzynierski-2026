@@ -19,6 +19,10 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IUserAuthorizationService, UserAuthorizationService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.Configure<DevicePairingSettings>(builder.Configuration.GetSection(DevicePairingSettings.SectionName));
+builder.Services.AddSingleton<IDevicePairCodeStore, DevicePairCodeStore>();
+builder.Services.AddScoped<IPasswordHasher<Device>, PasswordHasher<Device>>();
+builder.Services.AddScoped<IDevicesService, DevicesService>();
 
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>()
     ?? throw new InvalidOperationException("Brak konfiguracji sekcji Jwt.");

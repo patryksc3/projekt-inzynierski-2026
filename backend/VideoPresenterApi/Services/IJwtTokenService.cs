@@ -6,4 +6,6 @@ namespace VideoPresenterApi.Services;
 public interface IJwtTokenService
 {
     LoginResponse CreateAccessToken(User user);
+
+    LoginResponse CreateAccessToken(Device device);
 }

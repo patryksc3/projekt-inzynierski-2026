@@ -15,14 +15,25 @@ public sealed class JwtTokenService(IOptions<JwtSettings> options) : IJwtTokenSe
 
     public LoginResponse CreateAccessToken(User user)
     {
+        return CreateAccessToken(user.Id, user.Login, "user");
+    }
+
+    public LoginResponse CreateAccessToken(Device device)
+    {
+        return CreateAccessToken(device.Id, device.Name, "device");
+    }
+
+    private LoginResponse CreateAccessToken(Guid id, string name, string tokenType)
+    {
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.Add(TokenLifetime);
         var key = new SymmetricSecurityKey(Convert.FromBase64String(settings.SigningKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.UniqueName, user.Login),
+            new Claim(JwtRegisteredClaimNames.Sub, id.ToString()),
+            new Claim(JwtRegisteredClaimNames.UniqueName, name),
+            new Claim("token_type", tokenType),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
