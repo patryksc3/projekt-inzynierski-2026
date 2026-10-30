@@ -25,14 +25,9 @@ class MediaPlayerPrototype:
         )
 
         
-        @self.player.on_key_press("q")
-        def quit_binding():
-            print("Zamykanie odtwarzacza...")
-            self.stop()
-            os._exit(0)
+      
 
     def get_local_playlist(self, directory: Path) -> list[Path]:
-        """Pobiera listę obsługiwanych plików wideo i zdjęć z folderu testowego."""
         if not directory.exists():
             directory.mkdir(parents=True, exist_ok=True)
             return []
@@ -45,7 +40,6 @@ class MediaPlayerPrototype:
         return files
 
     def play_loop(self, directory: Path):
-        """Główna pętla odtwarzająca lokalną listę plików."""
         print(f"Start. Szukanie plików w: {directory.resolve()}")
         print("Naciśnij 'q' w oknie odtwarzacza lub Ctrl+C w terminalu, aby zakończyć.")
 
