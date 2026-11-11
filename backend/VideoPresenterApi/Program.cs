@@ -24,6 +24,16 @@ builder.Services.AddSingleton<IDevicePairCodeStore, DevicePairCodeStore>();
 builder.Services.AddScoped<IPasswordHasher<Device>, PasswordHasher<Device>>();
 builder.Services.AddScoped<IDevicesService, DevicesService>();
 
+var mediaSettings = builder.Configuration.GetSection(MediaStorageSettings.SectionName).Get<MediaStorageSettings>()
+    ?? new MediaStorageSettings();
+builder.Services.Configure<MediaStorageSettings>(builder.Configuration.GetSection(MediaStorageSettings.SectionName));
+builder.Services.AddSingleton<IMediaStorage, LocalFileMediaStorage>();
+builder.Services.AddScoped<IMediaService, MediaService>();
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+    options.MultipartBodyLengthLimit = mediaSettings.MaxFileSizeBytes);
+builder.WebHost.ConfigureKestrel(options =>
+    options.Limits.MaxRequestBodySize = mediaSettings.MaxFileSizeBytes + 1024 * 1024);
+
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>()
     ?? throw new InvalidOperationException("Brak konfiguracji sekcji Jwt.");
 if (string.IsNullOrWhiteSpace(jwtSettings.Issuer) ||

@@ -39,6 +39,9 @@ ScaffoldingReadMe.txt
 # dotenv environment variables file
 .env
 
+# Uploaded media (local storage)
+media-storage/
+
 # Others
 ~$*
 *~

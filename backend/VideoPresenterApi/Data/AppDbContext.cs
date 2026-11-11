@@ -7,6 +7,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<Device> Devices => Set<Device>();
+    public DbSet<MediaItem> MediaItems => Set<MediaItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,5 +34,30 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         device.Property(d => d.CredentialHash)
             .HasMaxLength(512)
             .IsRequired();
+
+        var media = modelBuilder.Entity<MediaItem>();
+
+        media.ToTable("MediaItems");
+        media.HasKey(m => m.Id);
+        media.Property(m => m.OriginalName)
+            .HasMaxLength(255)
+            .IsRequired();
+        media.Property(m => m.ContentType)
+            .HasMaxLength(128)
+            .IsRequired();
+        media.Property(m => m.StorageKey)
+            .HasMaxLength(128)
+            .IsRequired();
+        media.Property(m => m.Sha256)
+            .HasMaxLength(64)
+            .IsRequired();
+        media.Property(m => m.Kind)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+        media.HasIndex(m => m.CreatedAt);
+        media.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(m => m.UploadedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
