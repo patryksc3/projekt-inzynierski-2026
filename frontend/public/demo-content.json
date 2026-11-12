@@ -1,0 +1,116 @@
+{
+  "media": [
+    {
+      "id": "welcome",
+      "name": "Witaj na kampusie",
+      "kind": "image",
+      "format": "PNG",
+      "size": "2,4 MB",
+      "duration": "00:15",
+      "artwork": "welcome",
+      "addedAt": "29.10.2026"
+    },
+    {
+      "id": "open-day",
+      "name": "Dzień otwarty 2026",
+      "kind": "image",
+      "format": "JPG",
+      "size": "3,1 MB",
+      "duration": "00:20",
+      "artwork": "open-day",
+      "addedAt": "29.10.2026"
+    },
+    {
+      "id": "campus",
+      "name": "Poznaj nasz kampus",
+      "kind": "video",
+      "format": "MP4",
+      "size": "48,6 MB",
+      "duration": "01:32",
+      "artwork": "campus",
+      "addedAt": "28.10.2026"
+    },
+    {
+      "id": "workshop",
+      "name": "Warsztaty kreatywne",
+      "kind": "image",
+      "format": "PNG",
+      "size": "1,8 MB",
+      "duration": "00:15",
+      "artwork": "workshop",
+      "addedAt": "28.10.2026"
+    },
+    {
+      "id": "library",
+      "name": "Biblioteka po godzinach",
+      "kind": "image",
+      "format": "JPG",
+      "size": "2,2 MB",
+      "duration": "00:15",
+      "artwork": "library",
+      "addedAt": "27.10.2026"
+    },
+    {
+      "id": "cafe",
+      "name": "Przerwa na dobry dzień",
+      "kind": "video",
+      "format": "MP4",
+      "size": "24,8 MB",
+      "duration": "00:45",
+      "artwork": "cafe",
+      "addedAt": "27.10.2026"
+    }
+  ],
+  "playlists": [
+    {
+      "id": "daily",
+      "name": "Dzień dobry, kampus!",
+      "description": "Codzienna porcja informacji dla studentów.",
+      "mediaIds": ["welcome", "open-day", "campus", "workshop"],
+      "duration": "02:22",
+      "status": "active",
+      "updatedAt": "Dzisiaj, 09:41"
+    },
+    {
+      "id": "events",
+      "name": "Wydarzenia i ogłoszenia",
+      "description": "Wszystko, co warto mieć w kalendarzu.",
+      "mediaIds": ["open-day", "workshop", "library"],
+      "duration": "00:50",
+      "status": "ready",
+      "updatedAt": "Wczoraj, 15:20"
+    },
+    {
+      "id": "break",
+      "name": "Czas na przerwę",
+      "description": "Chwila inspiracji między zajęciami.",
+      "mediaIds": ["cafe", "library"],
+      "duration": "01:00",
+      "status": "draft",
+      "updatedAt": "27 paź, 12:05"
+    }
+  ],
+  "schedule": [
+    {
+      "time": "08:00",
+      "end": "12:00",
+      "playlistId": "daily",
+      "label": "Poranne powitanie",
+      "active": true
+    },
+    {
+      "time": "12:00",
+      "end": "16:00",
+      "playlistId": "events",
+      "label": "Co słychać na uczelni?",
+      "active": false
+    },
+    {
+      "time": "16:00",
+      "end": "18:00",
+      "playlistId": "break",
+      "label": "Popołudnie na luzie",
+      "active": false
+    }
+  ]
+}
