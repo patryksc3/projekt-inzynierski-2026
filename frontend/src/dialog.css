@@ -106,15 +106,6 @@
   border-radius: 5px;
   flex-shrink: 0;
 }
-.playlist-detail-button .art-eyebrow,
-.playlist-detail-button .art-foot,
-.playlist-detail-button .art-date {
-  display: none;
-}
-.playlist-detail-button .media-artwork strong {
-  font-size: 13px;
-  letter-spacing: -0.5px;
-}
 .playlist-detail-button > span > strong {
   display: block;
   font-size: 13px;

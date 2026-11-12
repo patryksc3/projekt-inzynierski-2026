@@ -589,21 +589,6 @@ h1 {
   border-radius: 4px;
   overflow: hidden;
 }
-.media-thumbnail .media-artwork {
-  padding: 7px;
-}
-.media-thumbnail .media-artwork strong {
-  font-size: 11px;
-  line-height: 1.1;
-  margin-top: 1px;
-  letter-spacing: -0.5px;
-}
-.media-thumbnail .art-eyebrow,
-.media-thumbnail .art-foot,
-.media-thumbnail .art-date,
-.media-thumbnail .art-play {
-  display: none;
-}
 .media-card-content {
   flex: 1;
   min-width: 0;
@@ -1337,12 +1322,6 @@ h1 {
   .media-card .skeleton.media-thumbnail {
     width: 45px;
     height: 34px;
-  }
-  .media-thumbnail .media-artwork {
-    padding: 6px;
-  }
-  .media-thumbnail .media-artwork strong {
-    font-size: 10px;
   }
   .media-card-content > strong {
     font-size: 12px;

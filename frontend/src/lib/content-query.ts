@@ -1,7 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { ContentData } from '@/types/content'
 
-// Lokalny endpoint demonstracyjny. Docelowy adapter API zastąpi tę funkcję.
 export async function fetchContent(signal: AbortSignal): Promise<ContentData> {
   const response = await fetch(`${import.meta.env.BASE_URL}demo-content.json`, {
     signal,

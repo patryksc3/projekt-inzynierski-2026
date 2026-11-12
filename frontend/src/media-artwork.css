@@ -1,0 +1,18 @@
+.media-artwork {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  container-type: inline-size;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+
+.media-placeholder-label {
+  font-size: clamp(8px, 11cqw, 24px);
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
