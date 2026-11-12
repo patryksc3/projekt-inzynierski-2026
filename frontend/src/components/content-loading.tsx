@@ -24,7 +24,9 @@ export function ContentLoading({
           <p>
             {paused
               ? 'Dane pojawią się po odzyskaniu połączenia.'
-              : 'Pobieranie materiałów i playlist.'}
+              : page === 'library'
+                ? 'Pobieranie biblioteki mediów.'
+                : 'Pobieranie materiałów i playlist.'}
           </p>
         </div>
       </div>
@@ -74,14 +76,20 @@ export function ContentLoading({
   )
 }
 
-export function ContentError({ onRetry }: { onRetry: () => void }) {
+export function ContentError({
+  message,
+  onRetry,
+}: {
+  message?: string
+  onRetry: () => void
+}) {
   return (
     <section className="content-error" role="alert">
       <span className="error-symbol">
         <CircleAlert size={28} />
       </span>
       <h1>Nie udało się wczytać treści</h1>
-      <p>Sprawdź połączenie i spróbuj ponownie.</p>
+      <p>{message ?? 'Sprawdź połączenie i spróbuj ponownie.'}</p>
       <Button onClick={onRetry}>
         <RefreshCw size={15} />
         Spróbuj ponownie

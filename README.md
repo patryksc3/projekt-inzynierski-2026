@@ -14,6 +14,25 @@ npm run dev
 
 Vite wypisze lokalny adres aplikacji. Pozostałe polecenia: `npm run build` (kontrola TypeScript i build produkcyjny), `npm run preview` (podgląd buildu), `npm run lint` (analiza kodu), `npm run format` i `npm run format:check` (Prettier).
 
+Biblioteka mediów wymaga uruchomionego API z dostępem do PostgreSQL. Przed pierwszym startem skonfiguruj `ConnectionStrings:Default` dla swojej bazy i wygeneruj lokalny klucz JWT. Projekt ma już skonfigurowane `Jwt:Issuer` i `Jwt:Audience`. Jeśli brakuje `Jwt:SigningKey`, uruchom w PowerShellu z głównego katalogu projektu:
+
+```powershell
+$jwtBytes = New-Object byte[] 32
+$jwtRandom = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try { $jwtRandom.GetBytes($jwtBytes) } finally { $jwtRandom.Dispose() }
+@{ 'Jwt:SigningKey' = [Convert]::ToBase64String($jwtBytes) } |
+    ConvertTo-Json -Compress |
+    dotnet user-secrets set --project backend/VideoPresenterApi
+```
+
+Profil `http` wczytuje lokalne .NET User Secrets w trybie `Development`. Uruchom backend z głównego katalogu projektu:
+
+```sh
+dotnet run --project backend/VideoPresenterApi --launch-profile http
+```
+
+Jeśli baza jest świeża, zastosuj migracje Entity Framework i utwórz pierwsze konto przez `POST /api/authorization/register-user` w Swaggerze. W bibliotece zaloguj się tym kontem. Vite przekazuje żądania `/api` na `http://localhost:5083`. Zmienna środowiskowa `API_PROXY_TARGET` pozwala wskazać inny adres podczas uruchamiania Vite. W produkcji udostępnij frontend i trasę `/api` pod wspólnym adresem HTTPS.
+
 ## Etap 01 — fundament i interfejs
 
 - React, TypeScript w trybie strict, Vite i Tailwind CSS.
@@ -22,7 +41,7 @@ Vite wypisze lokalny adres aplikacji. Pozostałe polecenia: `npm run build` (kon
 - Dostępne z klawiatury podglądy materiałów, playlist i przykładowego planu dnia.
 - Nawigacja `#dashboard` / `#library`, obsługująca przyciski wstecz i dalej przeglądarki.
 
-To prototyp wizualny. Wszystkie dane oraz data 29.10.2026 są przykładowe. Miniatury są prostymi, numerowanymi placeholderami; nie są przesłanymi plikami. Nie ma jeszcze uploadu, rzeczywistego odtwarzania filmów, logowania, zapisu danych, komunikacji z Raspberry Pi ani API. Oznaczenia aktywności służą prezentacji projektu. Wyszukiwanie i filtry działają w pamięci przeglądarki.
+Pulpit pokazuje dane demonstracyjne, w tym przykładowe playlisty, harmonogram i numerowane miniatury. Biblioteka korzysta z API i pozwala przesyłać oraz usuwać pliki po zalogowaniu. Wyszukiwanie i filtry działają w pamięci przeglądarki.
 
 ## Struktura
 
@@ -68,7 +87,7 @@ Aktualny interfejs przebudowano od podstaw wokół poziomej nawigacji, wyśrodko
 Każdy etap powinien stanowić osobną, spójną zmianę możliwą do przeglądu i osobny commit:
 
 1. **Gotowe:** konfiguracja i pierwsza wersja responsywnego interfejsu.
-2. Biblioteka: formularz przesyłania, walidacja i uzgodniony z backendem kontrakt materiałów.
+2. **Gotowe:** biblioteka z logowaniem, listą materiałów, przesyłaniem i usuwaniem plików przez API.
 3. Edytor playlist: wybór i kolejność materiałów, czasy emisji, zapis.
 4. Harmonogramy: formularze i reguły emisji.
 5. Integracja: ASP.NET Core i JWT; TanStack Query jest już przygotowany do obsługi danych serwera.

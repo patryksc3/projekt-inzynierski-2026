@@ -1,22 +1,35 @@
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, FileImage, Film } from 'lucide-react'
 import { MediaArtwork } from '@/components/media-artwork'
 import type { MediaItem } from '@/types/content'
 
-export function MediaCard({
+type CardMedia = Pick<
+  MediaItem,
+  'name' | 'kind' | 'format' | 'size' | 'addedAt'
+> &
+  Partial<Pick<MediaItem, 'artwork'>>
+
+export function MediaCard<T extends CardMedia>({
   item,
   onSelect,
 }: {
-  item: MediaItem
-  onSelect: (item: MediaItem) => void
+  item: T
+  onSelect: (item: T) => void
 }) {
+  const FileIcon = item.kind === 'video' ? Film : FileImage
   return (
     <button
       className="media-card"
       onClick={() => onSelect(item)}
-      aria-label={`Podgląd: ${item.name}`}
+      aria-label={`${item.artwork ? 'Podgląd' : 'Szczegóły'}: ${item.name}`}
     >
       <div className="media-thumbnail">
-        <MediaArtwork kind={item.artwork} />
+        {item.artwork ? (
+          <MediaArtwork kind={item.artwork} />
+        ) : (
+          <div className="media-artwork" aria-hidden="true">
+            <FileIcon size={17} />
+          </div>
+        )}
       </div>
       <div className="media-card-content">
         <strong>{item.name}</strong>

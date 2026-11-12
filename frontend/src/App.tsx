@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarDays,
   Clock3,
@@ -21,7 +21,15 @@ import { Badge } from '@/components/ui/badge'
 import { MediaArtwork } from '@/components/media-artwork'
 import { Dashboard } from '@/features/dashboard'
 import { Library } from '@/features/library'
+import { LibraryLogin } from '@/features/library-login'
 import { contentQueryOptions } from '@/lib/content-query'
+import {
+  isUnauthorized,
+  listMedia,
+  mediaQueryKey,
+  sessionExpiredMessage,
+  type LibrarySession,
+} from '@/lib/media-api'
 import { ContentLoading, ContentError } from '@/components/content-loading'
 import type { MediaItem, Playlist } from '@/types/content'
 import './App.css'
@@ -41,7 +49,40 @@ export default function App() {
   const [page, setPage] = useState<Page>(currentPage)
   const [search, setSearch] = useState('')
   const [preview, setPreview] = useState<Preview>(null)
-  const contentQuery = useQuery(contentQueryOptions)
+  const [{ session, message }, setAuth] = useState<{
+    session?: LibrarySession
+    message?: string
+  }>({})
+  const queryClient = useQueryClient()
+
+  function endSession(ended: LibrarySession, message?: string) {
+    setAuth((current) =>
+      current.session?.id === ended.id ? { message } : current,
+    )
+    queryClient.removeQueries({
+      queryKey: mediaQueryKey(ended.id),
+      exact: true,
+    })
+  }
+
+  const contentQuery = useQuery({
+    ...contentQueryOptions,
+    enabled: page === 'dashboard',
+  })
+  const libraryQuery = useQuery({
+    queryKey: mediaQueryKey(session?.id),
+    queryFn: async ({ signal }) => {
+      if (!session) throw new Error('Zaloguj się, aby pobrać bibliotekę.')
+      try {
+        return await listMedia(session.token, signal)
+      } catch (error) {
+        if (isUnauthorized(error)) endSession(session, sessionExpiredMessage)
+        throw error
+      }
+    },
+    enabled: page === 'library' && !!session,
+    retry: false,
+  })
   const { media = [], playlists = [], schedule = [] } = contentQuery.data ?? {}
 
   useEffect(() => {
@@ -63,28 +104,39 @@ export default function App() {
   const openPlaylist = (item: Playlist) =>
     setPreview({ type: 'playlist', item })
 
+  const currentQuery = page === 'dashboard' ? contentQuery : libraryQuery
+
   return (
     <AppShell
       page={page}
       navigate={navigate}
       onHelp={() => setPreview({ type: 'about' })}
-      mediaCount={contentQuery.data?.media.length}
-      isFetching={contentQuery.isFetching}
-      onRefresh={() => void contentQuery.refetch()}
+      accountLogin={session?.login}
+      onSignOut={session ? () => endSession(session) : undefined}
+      mediaCount={session ? libraryQuery.data?.length : undefined}
+      isFetching={currentQuery.isFetching}
+      onRefresh={
+        page === 'dashboard' || session
+          ? () => void currentQuery.refetch()
+          : undefined
+      }
     >
-      {contentQuery.isRefetchError && (
+      {currentQuery.isRefetchError && (
         <p className="refresh-error" role="alert">
           Nie udało się odświeżyć danych. Wyświetlamy ostatnią pobraną wersję.{' '}
-          <button onClick={() => void contentQuery.refetch()}>
+          <button onClick={() => void currentQuery.refetch()}>
             Ponów próbę
           </button>
         </p>
       )}
-      {contentQuery.isPending ? (
-        <ContentLoading page={page} paused={contentQuery.isPaused} />
-      ) : !contentQuery.data ? (
-        <ContentError onRetry={() => void contentQuery.refetch()} />
-      ) : page === 'dashboard' ? (
+      {page === 'library' && !session ? (
+        <LibraryLogin
+          message={message}
+          onSignIn={(session) => setAuth({ session })}
+        />
+      ) : currentQuery.isPending ? (
+        <ContentLoading page={page} paused={currentQuery.isPaused} />
+      ) : page === 'dashboard' && contentQuery.data ? (
         <Dashboard
           content={contentQuery.data}
           onLibrary={() => navigate('library')}
@@ -92,12 +144,19 @@ export default function App() {
           onPlaylist={openPlaylist}
           onSchedule={() => setPreview({ type: 'schedule' })}
         />
-      ) : (
+      ) : page === 'library' && session && libraryQuery.data ? (
         <Library
-          media={media}
+          key={session.id}
+          media={libraryQuery.data}
+          session={session}
           search={search}
           onSearch={setSearch}
-          onMedia={openMedia}
+          onSessionExpired={() => endSession(session, sessionExpiredMessage)}
+        />
+      ) : (
+        <ContentError
+          message={currentQuery.error?.message}
+          onRetry={() => void currentQuery.refetch()}
         />
       )}
       <Dialog
@@ -266,14 +325,13 @@ export default function App() {
                 <Badge variant="secondary">Etap 01</Badge>
                 <strong>Fundament i projekt interfejsu</strong>
                 <p>
-                  Pulpit, biblioteka, podgląd materiałów, playlist i planu dnia.
-                  Dane są demonstracyjne, a czas na pulpicie jest stały.
+                  Biblioteka obsługuje pliki zapisane na serwerze. Pulpit
+                  prezentuje przykładowe playlisty i plan dnia.
                 </p>
               </div>
               <p className="dialog-note">
                 <Info size={15} />
-                Panel nie jest jeszcze połączony z serwerem ani urządzeniem
-                Raspberry Pi.
+                Integracja panelu z Raspberry Pi jest w przygotowaniu.
               </p>
             </>
           )}
