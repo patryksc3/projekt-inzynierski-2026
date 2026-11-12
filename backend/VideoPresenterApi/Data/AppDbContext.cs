@@ -1,13 +1,25 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using VideoPresenterApi.Models;
 
 namespace VideoPresenterApi.Data;
 
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
+    internal const string PlaylistMediaForeignKey = "FK_PlaylistItems_MediaItems_MediaId";
+
     public DbSet<User> Users => Set<User>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<MediaItem> MediaItems => Set<MediaItem>();
+    public DbSet<Playlist> Playlists => Set<Playlist>();
+    public DbSet<PlaylistItem> PlaylistItems => Set<PlaylistItem>();
+
+    internal static bool IsPlaylistMediaConflict(DbUpdateException exception) =>
+        exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.ForeignKeyViolation,
+            ConstraintName: PlaylistMediaForeignKey
+        };
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +70,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         media.HasOne<User>()
             .WithMany()
             .HasForeignKey(m => m.UploadedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var playlist = modelBuilder.Entity<Playlist>();
+        playlist.Property(p => p.Name).HasMaxLength(128);
+        playlist.Property(p => p.Version).IsConcurrencyToken();
+        playlist.HasMany(p => p.Items)
+            .WithOne()
+            .HasForeignKey(i => i.PlaylistId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var playlistItem = modelBuilder.Entity<PlaylistItem>();
+        playlistItem.HasIndex(i => new { i.PlaylistId, i.Position }).IsUnique();
+        playlistItem.HasOne<MediaItem>()
+            .WithMany()
+            .HasForeignKey(i => i.MediaId)
+            .HasConstraintName(PlaylistMediaForeignKey)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

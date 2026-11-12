@@ -5,9 +5,13 @@ import { Input } from '@/components/ui/input'
 import { signIn, type LibrarySession } from '@/lib/media-api'
 
 export function LibraryLogin({
+  title,
+  description,
   message,
   onSignIn,
 }: {
+  title: string
+  description: string
   message?: string
   onSignIn: (session: LibrarySession) => void
 }) {
@@ -43,8 +47,8 @@ export function LibraryLogin({
     <>
       <section className="page-heading">
         <div>
-          <h1>Biblioteka mediów</h1>
-          <p>Zaloguj się, aby zarządzać zdjęciami i filmami.</p>
+          <h1>{title}</h1>
+          <p>{description}</p>
         </div>
       </section>
       <form

@@ -22,14 +22,16 @@ import { MediaArtwork } from '@/components/media-artwork'
 import { Dashboard } from '@/features/dashboard'
 import { Library } from '@/features/library'
 import { LibraryLogin } from '@/features/library-login'
+import { Playlists } from '@/features/playlists'
+import { isUnauthorized } from '@/lib/api'
 import { contentQueryOptions } from '@/lib/content-query'
 import {
-  isUnauthorized,
   listMedia,
   mediaQueryKey,
   sessionExpiredMessage,
   type LibrarySession,
 } from '@/lib/media-api'
+import { listPlaylists, playlistQueryKey } from '@/lib/playlists-api'
 import { ContentLoading, ContentError } from '@/components/content-loading'
 import type { MediaItem, Playlist } from '@/types/content'
 import './App.css'
@@ -42,7 +44,16 @@ type Preview =
   | null
 
 function currentPage(): Page {
-  return window.location.hash === '#library' ? 'library' : 'dashboard'
+  const hash = window.location.hash
+  if (hash === '#library') return 'library'
+  if (hash === '#playlists') return 'playlists'
+  return 'dashboard'
+}
+
+const pageTitles: Record<Page, string> = {
+  dashboard: 'Pulpit',
+  library: 'Biblioteka mediów',
+  playlists: 'Playlisty',
 }
 
 export default function App() {
@@ -63,6 +74,10 @@ export default function App() {
       queryKey: mediaQueryKey(ended.id),
       exact: true,
     })
+    queryClient.removeQueries({
+      queryKey: playlistQueryKey(ended.id),
+      exact: true,
+    })
   }
 
   const contentQuery = useQuery({
@@ -80,7 +95,21 @@ export default function App() {
         throw error
       }
     },
-    enabled: page === 'library' && !!session,
+    enabled: page !== 'dashboard' && !!session,
+    retry: false,
+  })
+  const playlistsQuery = useQuery({
+    queryKey: playlistQueryKey(session?.id),
+    queryFn: async ({ signal }) => {
+      if (!session) throw new Error('Zaloguj się, aby pobrać playlisty.')
+      try {
+        return await listPlaylists(session.token, signal)
+      } catch (error) {
+        if (isUnauthorized(error)) endSession(session, sessionExpiredMessage)
+        throw error
+      }
+    },
+    enabled: page === 'playlists' && !!session,
     retry: false,
   })
   const { media = [], playlists = [], schedule = [] } = contentQuery.data ?? {}
@@ -92,7 +121,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    document.title = `${page === 'dashboard' ? 'Pulpit' : 'Biblioteka mediów'} — pixto`
+    document.title = `${pageTitles[page]} — pixto`
   }, [page])
 
   const navigate = (next: Page) => {
@@ -104,7 +133,17 @@ export default function App() {
   const openPlaylist = (item: Playlist) =>
     setPreview({ type: 'playlist', item })
 
-  const currentQuery = page === 'dashboard' ? contentQuery : libraryQuery
+  const currentQuery =
+    page === 'dashboard'
+      ? contentQuery
+      : page === 'library'
+        ? libraryQuery
+        : playlistsQuery
+
+  function refresh() {
+    void currentQuery.refetch()
+    if (page === 'playlists') void libraryQuery.refetch()
+  }
 
   return (
     <AppShell
@@ -114,23 +153,26 @@ export default function App() {
       accountLogin={session?.login}
       onSignOut={session ? () => endSession(session) : undefined}
       mediaCount={session ? libraryQuery.data?.length : undefined}
-      isFetching={currentQuery.isFetching}
-      onRefresh={
-        page === 'dashboard' || session
-          ? () => void currentQuery.refetch()
-          : undefined
+      isFetching={
+        currentQuery.isFetching ||
+        (page === 'playlists' && libraryQuery.isFetching)
       }
+      onRefresh={page === 'dashboard' || session ? refresh : undefined}
     >
       {currentQuery.isRefetchError && (
         <p className="refresh-error" role="alert">
           Nie udało się odświeżyć danych. Wyświetlamy ostatnią pobraną wersję.{' '}
-          <button onClick={() => void currentQuery.refetch()}>
-            Ponów próbę
-          </button>
+          <button onClick={refresh}>Ponów próbę</button>
         </p>
       )}
-      {page === 'library' && !session ? (
+      {page !== 'dashboard' && !session ? (
         <LibraryLogin
+          title={pageTitles[page]}
+          description={
+            page === 'playlists'
+              ? 'Zaloguj się, aby zarządzać playlistami.'
+              : 'Zaloguj się, aby zarządzać zdjęciami i filmami.'
+          }
           message={message}
           onSignIn={(session) => setAuth({ session })}
         />
@@ -153,11 +195,19 @@ export default function App() {
           onSearch={setSearch}
           onSessionExpired={() => endSession(session, sessionExpiredMessage)}
         />
-      ) : (
-        <ContentError
-          message={currentQuery.error?.message}
-          onRetry={() => void currentQuery.refetch()}
+      ) : page === 'playlists' && session && playlistsQuery.data ? (
+        <Playlists
+          key={session.id}
+          playlists={playlistsQuery.data}
+          media={libraryQuery.data}
+          mediaError={libraryQuery.error?.message}
+          session={session}
+          onLibrary={() => navigate('library')}
+          onRetryMedia={() => void libraryQuery.refetch()}
+          onSessionExpired={() => endSession(session, sessionExpiredMessage)}
         />
+      ) : (
+        <ContentError message={currentQuery.error?.message} onRetry={refresh} />
       )}
       <Dialog
         open={preview !== null}
@@ -264,8 +314,7 @@ export default function App() {
               </ol>
               <p className="dialog-note">
                 <Info size={15} />
-                Kolejność i czasy emisji są przykładowe. Edytor playlist
-                powstanie w kolejnym etapie.
+                Kolejność i czasy emisji są przykładowe.
               </p>
             </>
           )}
@@ -325,7 +374,7 @@ export default function App() {
                 <Badge variant="secondary">Etap 01</Badge>
                 <strong>Fundament i projekt interfejsu</strong>
                 <p>
-                  Biblioteka obsługuje pliki zapisane na serwerze. Pulpit
+                  Biblioteka i edytor playlist zapisują dane na serwerze. Pulpit
                   prezentuje przykładowe playlisty i plan dnia.
                 </p>
               </div>

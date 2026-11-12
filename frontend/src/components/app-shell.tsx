@@ -21,9 +21,14 @@ import {
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
-export type Page = 'dashboard' | 'library'
+export type Page = 'dashboard' | 'library' | 'playlists'
 
 const mainContentId = 'main-content'
+const pageLabels: Record<Page, string> = {
+  dashboard: 'Pulpit',
+  library: 'Biblioteka',
+  playlists: 'Playlisty',
+}
 
 export function PlayMark() {
   return (
@@ -69,13 +74,15 @@ function Navigation({
           <span className="navigation-count">{mediaCount}</span>
         )}
       </PageLink>
-      <span
-        className="navigation-link navigation-unavailable"
-        aria-disabled="true"
+      <PageLink
+        page="playlists"
+        navigate={navigate}
+        className={cn('navigation-link', page === 'playlists' && 'is-active')}
+        aria-current={page === 'playlists' ? 'page' : undefined}
       >
         <ListVideo size={17} />
-        Playlisty<small>Wkrótce</small>
-      </span>
+        Playlisty
+      </PageLink>
       <span
         className="navigation-link navigation-unavailable"
         aria-disabled="true"
@@ -213,7 +220,7 @@ export function AppShell({
           <Monitor size={15} />
           <span>Przestrzeń uczelni</span>
           <span className="workspace-slash">/</span>
-          <strong>{page === 'dashboard' ? 'Pulpit' : 'Biblioteka'}</strong>
+          <strong>{pageLabels[page]}</strong>
         </div>
         <div className="workspace-actions">
           {page === 'dashboard' && (

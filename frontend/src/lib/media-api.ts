@@ -1,3 +1,4 @@
+import { ApiError, apiRequest } from '@/lib/api'
 import type { MediaItem } from '@/types/content'
 
 export type LibraryMedia = Omit<MediaItem, 'artwork' | 'duration'>
@@ -29,45 +30,11 @@ export const mediaQueryKey = (sessionId?: number) =>
   ['library-media', sessionId] as const
 let nextSessionId = 0
 
-export class MediaApiError extends Error {
-  readonly status: number
-
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
-}
-
-export function isUnauthorized(error: unknown) {
-  return error instanceof MediaApiError && error.status === 401
-}
-
-async function request(path: string, init: RequestInit, failure: string) {
-  let response: Response
-  try {
-    response = await fetch(path, init)
-  } catch (error) {
-    if (init.signal?.aborted) throw error
-    throw new Error('Nie udało się połączyć z serwerem.')
-  }
-
-  if (!response.ok) {
-    const body =
-      response.status < 500 ? await response.json().catch(() => null) : null
-    throw new MediaApiError(
-      response.status,
-      typeof body?.error === 'string' ? body.error : failure,
-    )
-  }
-
-  return response
-}
-
 export async function signIn(
   login: string,
   password: string,
 ): Promise<LibrarySession> {
-  const response = await request(
+  const response = await apiRequest(
     `${authorizationPath}/login`,
     {
       method: 'POST',
@@ -123,7 +90,7 @@ function toLibraryMedia(data: unknown): LibraryMedia {
 }
 
 export async function listMedia(token: string, signal: AbortSignal) {
-  const response = await request(
+  const response = await apiRequest(
     mediaPath,
     { headers: { Authorization: `Bearer ${token}` }, signal },
     'Nie udało się pobrać biblioteki mediów.',
@@ -147,7 +114,7 @@ export async function uploadMedia(token: string, file: File) {
 
   const body = new FormData()
   body.append('file', file)
-  const response = await request(
+  const response = await apiRequest(
     mediaPath,
     { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body },
     'Nie udało się przesłać pliku.',
@@ -157,12 +124,12 @@ export async function uploadMedia(token: string, file: File) {
 
 export async function deleteMedia(token: string, id: string) {
   try {
-    await request(
+    await apiRequest(
       `${mediaPath}/${encodeURIComponent(id)}`,
       { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
       'Nie udało się usunąć pliku.',
     )
   } catch (error) {
-    if (!(error instanceof MediaApiError && error.status === 404)) throw error
+    if (!(error instanceof ApiError && error.status === 404)) throw error
   }
 }

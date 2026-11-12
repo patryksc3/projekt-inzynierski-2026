@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
 using VideoPresenterApi.Contracts;
+using VideoPresenterApi.Data;
 using VideoPresenterApi.Services;
 
 namespace VideoPresenterApi.Controllers;
@@ -63,6 +65,7 @@ public sealed class MediaController(IMediaService mediaService) : ControllerBase
     [HttpDelete("{id:guid}", Name = "DeleteMedia")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         if (!IsUserToken())
@@ -70,7 +73,14 @@ public sealed class MediaController(IMediaService mediaService) : ControllerBase
             return Forbid();
         }
 
-        return await mediaService.DeleteAsync(id, cancellationToken) ? NoContent() : NotFound();
+        try
+        {
+            return await mediaService.DeleteAsync(id, cancellationToken) ? NoContent() : NotFound();
+        }
+        catch (DbUpdateException exception) when (AppDbContext.IsPlaylistMediaConflict(exception))
+        {
+            return Conflict(new { error = "Materiał jest używany w playliście. Usuń go z playlist przed usunięciem z biblioteki." });
+        }
     }
 
     [HttpGet("{id:guid}/content", Name = "GetMediaContent")]

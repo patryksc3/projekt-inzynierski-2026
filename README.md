@@ -14,7 +14,7 @@ npm run dev
 
 Vite wypisze lokalny adres aplikacji. Pozostałe polecenia: `npm run build` (kontrola TypeScript i build produkcyjny), `npm run preview` (podgląd buildu), `npm run lint` (analiza kodu), `npm run format` i `npm run format:check` (Prettier).
 
-Biblioteka mediów wymaga uruchomionego API z dostępem do PostgreSQL. Przed pierwszym startem skonfiguruj `ConnectionStrings:Default` dla swojej bazy i wygeneruj lokalny klucz JWT. Projekt ma już skonfigurowane `Jwt:Issuer` i `Jwt:Audience`. Jeśli brakuje `Jwt:SigningKey`, uruchom w PowerShellu z głównego katalogu projektu:
+Biblioteka mediów i playlisty wymagają uruchomionego API z dostępem do PostgreSQL. Przed pierwszym startem skonfiguruj `ConnectionStrings:Default` dla swojej bazy i wygeneruj lokalny klucz JWT. Projekt ma już skonfigurowane `Jwt:Issuer` i `Jwt:Audience`. Jeśli brakuje `Jwt:SigningKey`, uruchom w PowerShellu z głównego katalogu projektu:
 
 ```powershell
 $jwtBytes = New-Object byte[] 32
@@ -25,13 +25,14 @@ try { $jwtRandom.GetBytes($jwtBytes) } finally { $jwtRandom.Dispose() }
     dotnet user-secrets set --project backend/VideoPresenterApi
 ```
 
-Profil `http` wczytuje lokalne .NET User Secrets w trybie `Development`. Uruchom backend z głównego katalogu projektu:
+Profil `http` wczytuje lokalne .NET User Secrets w trybie `Development`. Zastosuj migracje Entity Framework (w tym `AddPlaylists`) i uruchom backend z głównego katalogu projektu:
 
 ```sh
+dotnet ef database update --project backend/VideoPresenterApi -- --environment Development
 dotnet run --project backend/VideoPresenterApi --launch-profile http
 ```
 
-Jeśli baza jest świeża, zastosuj migracje Entity Framework i utwórz pierwsze konto przez `POST /api/authorization/register-user` w Swaggerze. W bibliotece zaloguj się tym kontem. Vite przekazuje żądania `/api` na `http://localhost:5083`. Zmienna środowiskowa `API_PROXY_TARGET` pozwala wskazać inny adres podczas uruchamiania Vite. W produkcji udostępnij frontend i trasę `/api` pod wspólnym adresem HTTPS.
+Jeśli baza jest świeża, utwórz pierwsze konto przez `POST /api/authorization/register-user` w Swaggerze. W panelu zaloguj się tym kontem. Vite przekazuje żądania `/api` na `http://localhost:5083`. Zmienna środowiskowa `API_PROXY_TARGET` pozwala wskazać inny adres podczas uruchamiania Vite. W produkcji udostępnij frontend i trasę `/api` pod wspólnym adresem HTTPS.
 
 ## Etap 01 — fundament i interfejs
 
@@ -39,9 +40,9 @@ Jeśli baza jest świeża, zastosuj migracje Entity Framework i utwórz pierwsze
 - Lokalne komponenty shadcn/ui: Button, Badge, Dialog, Sheet, Input i Tabs. Ikony Lucide, font DM Sans hostowany lokalnie.
 - Responsywny pulpit, nawigacja mobilna, biblioteka z wyszukiwaniem, filtrami i sortowaniem.
 - Dostępne z klawiatury podglądy materiałów, playlist i przykładowego planu dnia.
-- Nawigacja `#dashboard` / `#library`, obsługująca przyciski wstecz i dalej przeglądarki.
+- Nawigacja `#dashboard` / `#library` / `#playlists`, obsługująca przyciski wstecz i dalej przeglądarki.
 
-Pulpit pokazuje dane demonstracyjne, w tym przykładowe playlisty, harmonogram i numerowane miniatury. Biblioteka korzysta z API i pozwala przesyłać oraz usuwać pliki po zalogowaniu. Wyszukiwanie i filtry działają w pamięci przeglądarki.
+Pulpit pokazuje dane demonstracyjne, w tym przykładowe playlisty, harmonogram i numerowane miniatury. Po zalogowaniu biblioteka pozwala przesyłać i usuwać pliki, a edytor playlist zapisuje zestawy materiałów wraz z ich kolejnością i czasem emisji. Wyszukiwanie i filtry biblioteki działają w pamięci przeglądarki.
 
 ## Struktura
 
@@ -49,7 +50,7 @@ Pulpit pokazuje dane demonstracyjne, w tym przykładowe playlisty, harmonogram i
 frontend/src/
   components/       # powłoka aplikacji, grafiki i karty materiałów
     ui/             # komponenty shadcn/ui
-  features/         # pulpit i biblioteka
+  features/         # pulpit, biblioteka i playlisty
   lib/              # wspólne narzędzia
   types/            # modele frontendu (nie są kontraktem API)
   App.tsx           # nawigacja i podglądy
@@ -88,7 +89,7 @@ Każdy etap powinien stanowić osobną, spójną zmianę możliwą do przeglądu
 
 1. **Gotowe:** konfiguracja i pierwsza wersja responsywnego interfejsu.
 2. **Gotowe:** biblioteka z logowaniem, listą materiałów, przesyłaniem i usuwaniem plików przez API.
-3. Edytor playlist: wybór i kolejność materiałów, czasy emisji, zapis.
+3. **Gotowe:** edytor playlist z wyborem i kolejnością materiałów, czasem emisji każdej pozycji oraz zapisem przez API.
 4. Harmonogramy: formularze i reguły emisji.
 5. Integracja: ASP.NET Core i JWT; TanStack Query jest już przygotowany do obsługi danych serwera.
 6. Testy integracyjne i obsługa błędów/synchronizacji; odtwarzanie offline po stronie agenta Raspberry Pi.

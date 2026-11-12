@@ -3,6 +3,12 @@ import type { Page } from '@/components/app-shell'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 
+const loadingMessages: Record<Page, string> = {
+  dashboard: 'Pobieranie materiałów i playlist.',
+  library: 'Pobieranie biblioteki mediów.',
+  playlists: 'Pobieranie playlist.',
+}
+
 export function ContentLoading({
   page,
   paused = false,
@@ -24,9 +30,7 @@ export function ContentLoading({
           <p>
             {paused
               ? 'Dane pojawią się po odzyskaniu połączenia.'
-              : page === 'library'
-                ? 'Pobieranie biblioteki mediów.'
-                : 'Pobieranie materiałów i playlist.'}
+              : loadingMessages[page]}
           </p>
         </div>
       </div>
