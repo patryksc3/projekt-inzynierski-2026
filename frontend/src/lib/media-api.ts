@@ -63,6 +63,37 @@ async function request(path: string, init: RequestInit, failure: string) {
   return response
 }
 
+export async function hasAnyUsers(signal: AbortSignal): Promise<boolean> {
+  const response = await request(
+    `${authorizationPath}/has-any-users`,
+    { signal, cache: 'no-store' },
+    'Nie udało się sprawdzić, czy skonfigurowano konto.',
+  )
+  const hasUsers: unknown = await response.json().catch(() => null)
+  if (typeof hasUsers !== 'boolean') {
+    throw new Error('Serwer zwrócił nieprawidłowy stan konta.')
+  }
+  return hasUsers
+}
+
+export async function registerFirstUser(login: string, password: string) {
+  try {
+    await request(
+      `${authorizationPath}/register-user`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login, password }),
+      },
+      'Nie udało się utworzyć konta.',
+    )
+    return true
+  } catch (error) {
+    if (error instanceof MediaApiError && error.status === 409) return false
+    throw error
+  }
+}
+
 export async function signIn(
   login: string,
   password: string,

@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { MediaArtwork } from '@/components/media-artwork'
 import { Dashboard } from '@/features/dashboard'
 import { Library } from '@/features/library'
-import { LibraryLogin } from '@/features/library-login'
+import { AuthScreen } from '@/features/auth-screen'
 import { contentQueryOptions } from '@/lib/content-query'
 import {
   isUnauthorized,
@@ -67,7 +67,7 @@ export default function App() {
 
   const contentQuery = useQuery({
     ...contentQueryOptions,
-    enabled: page === 'dashboard',
+    enabled: page === 'dashboard' && !!session,
   })
   const libraryQuery = useQuery({
     queryKey: mediaQueryKey(session?.id),
@@ -92,8 +92,22 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    document.title = `${page === 'dashboard' ? 'Pulpit' : 'Biblioteka mediów'} — pixto`
-  }, [page])
+    const title = session
+      ? page === 'dashboard'
+        ? 'Pulpit'
+        : 'Biblioteka mediów'
+      : 'Dostęp do panelu'
+    document.title = `${title} — pixto`
+  }, [page, session])
+
+  if (!session) {
+    return (
+      <AuthScreen
+        message={message}
+        onSignIn={(session) => setAuth({ session })}
+      />
+    )
+  }
 
   const navigate = (next: Page) => {
     window.location.hash = next
@@ -111,15 +125,14 @@ export default function App() {
       page={page}
       navigate={navigate}
       onHelp={() => setPreview({ type: 'about' })}
-      accountLogin={session?.login}
-      onSignOut={session ? () => endSession(session) : undefined}
-      mediaCount={session ? libraryQuery.data?.length : undefined}
+      accountLogin={session.login}
+      onSignOut={() => {
+        setPreview(null)
+        endSession(session)
+      }}
+      mediaCount={libraryQuery.data?.length}
       isFetching={currentQuery.isFetching}
-      onRefresh={
-        page === 'dashboard' || session
-          ? () => void currentQuery.refetch()
-          : undefined
-      }
+      onRefresh={() => void currentQuery.refetch()}
     >
       {currentQuery.isRefetchError && (
         <p className="refresh-error" role="alert">
@@ -129,12 +142,7 @@ export default function App() {
           </button>
         </p>
       )}
-      {page === 'library' && !session ? (
-        <LibraryLogin
-          message={message}
-          onSignIn={(session) => setAuth({ session })}
-        />
-      ) : currentQuery.isPending ? (
+      {currentQuery.isPending ? (
         <ContentLoading page={page} paused={currentQuery.isPaused} />
       ) : page === 'dashboard' && contentQuery.data ? (
         <Dashboard
@@ -144,7 +152,7 @@ export default function App() {
           onPlaylist={openPlaylist}
           onSchedule={() => setPreview({ type: 'schedule' })}
         />
-      ) : page === 'library' && session && libraryQuery.data ? (
+      ) : page === 'library' && libraryQuery.data ? (
         <Library
           key={session.id}
           media={libraryQuery.data}
