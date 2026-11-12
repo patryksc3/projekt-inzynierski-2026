@@ -4,6 +4,7 @@ import {
   LayoutGrid,
   CalendarDays,
   ListVideo,
+  LogOut,
   Menu,
   RefreshCw,
   Monitor,
@@ -92,6 +93,8 @@ export function AppShell({
   onHelp,
   children,
   mediaCount,
+  accountLogin,
+  onSignOut,
   isFetching,
   onRefresh,
 }: {
@@ -100,8 +103,10 @@ export function AppShell({
   onHelp: () => void
   children: ReactNode
   mediaCount?: number
+  accountLogin?: string
+  onSignOut?: () => void
   isFetching: boolean
-  onRefresh: () => void
+  onRefresh?: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const mainContentRef = useRef<HTMLElement>(null)
@@ -149,12 +154,19 @@ export function AppShell({
               <CircleHelp size={18} />
             </Button>
             <span className="header-divider" />
-            <div className="account">
-              <span className="avatar">FB</span>
-              <span className="account-name">
-                Filip Bujakowski<small>Administrator</small>
-              </span>
-            </div>
+            {accountLogin && (
+              <div className="account">
+                <span className="avatar" aria-hidden="true">
+                  {accountLogin.slice(0, 2).toUpperCase()}
+                </span>
+                <span
+                  className="account-name max-w-28 truncate"
+                  title={accountLogin}
+                >
+                  {accountLogin}
+                </span>
+              </div>
+            )}
             <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
               <SheetTrigger asChild>
                 <Button
@@ -204,21 +216,36 @@ export function AppShell({
           <strong>{page === 'dashboard' ? 'Pulpit' : 'Biblioteka'}</strong>
         </div>
         <div className="workspace-actions">
-          <span className="demo-label">Wersja demonstracyjna</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="refresh-button"
-            aria-label="Odśwież dane"
-            title="Odśwież dane"
-            disabled={isFetching}
-            onClick={onRefresh}
-          >
-            <RefreshCw
-              size={16}
-              className={isFetching ? 'refresh-spinning' : ''}
-            />
-          </Button>
+          {page === 'dashboard' && (
+            <span className="demo-label">Wersja demonstracyjna</span>
+          )}
+          {onRefresh && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="refresh-button"
+              aria-label="Odśwież dane"
+              title="Odśwież dane"
+              disabled={isFetching}
+              onClick={onRefresh}
+            >
+              <RefreshCw
+                size={16}
+                className={isFetching ? 'refresh-spinning' : ''}
+              />
+            </Button>
+          )}
+          {onSignOut && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Wyloguj się"
+              title="Wyloguj się"
+              onClick={onSignOut}
+            >
+              <LogOut size={16} />
+            </Button>
+          )}
         </div>
       </div>
       <main id={mainContentId} ref={mainContentRef} tabIndex={-1}>
