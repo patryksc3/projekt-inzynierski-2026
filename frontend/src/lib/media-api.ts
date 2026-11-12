@@ -8,14 +8,6 @@ export interface LibrarySession {
   token: string
 }
 
-interface MediaResponse {
-  id: string
-  originalName: string
-  kind: 'Image' | 'Video'
-  sizeBytes: number
-  createdAt: string
-}
-
 const mediaPath = '/api/media'
 const authorizationPath = '/api/authorization'
 const mediaExtensions = [
@@ -101,11 +93,16 @@ function formatSize(bytes: number) {
   return `${sizeFormat.format(bytes / 1024 ** 2)} MB`
 }
 
-function toLibraryMedia(item: MediaResponse): LibraryMedia {
+function toLibraryMedia(data: unknown): LibraryMedia {
+  const item: Record<string, unknown> =
+    typeof data === 'object' && data !== null
+      ? (data as Record<string, unknown>)
+      : {}
   if (
-    typeof item?.id !== 'string' ||
+    typeof item.id !== 'string' ||
     typeof item.originalName !== 'string' ||
     (item.kind !== 'Image' && item.kind !== 'Video') ||
+    typeof item.sizeBytes !== 'number' ||
     !Number.isFinite(item.sizeBytes) ||
     item.sizeBytes < 0 ||
     typeof item.createdAt !== 'string' ||
@@ -131,7 +128,7 @@ export async function listMedia(token: string, signal: AbortSignal) {
     { headers: { Authorization: `Bearer ${token}` }, signal },
     'Nie udało się pobrać biblioteki mediów.',
   )
-  const items = await response.json()
+  const items: unknown = await response.json()
   if (!Array.isArray(items)) {
     throw new Error('Serwer zwrócił nieprawidłową listę plików.')
   }

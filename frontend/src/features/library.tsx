@@ -230,12 +230,9 @@ export function Library({
               {ascending ? 'Alfabetycznie' : 'Ostatnio dodane'}
             </p>
             {visible.length > 0 ? (
-              <div className="media-grid library-grid">
+              <div className="media-grid library-grid divide-y divide-white/5">
                 {visible.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex min-w-0 items-center border-b border-white/5 pr-3 last:border-b-0"
-                  >
+                  <div key={item.id} className="flex min-w-0 items-center pr-3">
                     <MediaCard
                       item={item}
                       onSelect={(item) => openDialog({ type: 'preview', item })}
