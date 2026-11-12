@@ -1,3 +1,4 @@
+import { ApiError, request } from '@/lib/api'
 import type { MediaItem } from '@/types/content'
 
 export type LibraryMedia = Omit<MediaItem, 'artwork' | 'duration'>
@@ -29,40 +30,6 @@ export const mediaQueryKey = (sessionId?: number) =>
   ['library-media', sessionId] as const
 let nextSessionId = 0
 
-export class MediaApiError extends Error {
-  readonly status: number
-
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
-}
-
-export function isUnauthorized(error: unknown) {
-  return error instanceof MediaApiError && error.status === 401
-}
-
-async function request(path: string, init: RequestInit, failure: string) {
-  let response: Response
-  try {
-    response = await fetch(path, init)
-  } catch (error) {
-    if (init.signal?.aborted) throw error
-    throw new Error('Nie udało się połączyć z serwerem.')
-  }
-
-  if (!response.ok) {
-    const body =
-      response.status < 500 ? await response.json().catch(() => null) : null
-    throw new MediaApiError(
-      response.status,
-      typeof body?.error === 'string' ? body.error : failure,
-    )
-  }
-
-  return response
-}
-
 export async function hasAnyUsers(signal: AbortSignal): Promise<boolean> {
   const response = await request(
     `${authorizationPath}/has-any-users`,
@@ -89,7 +56,7 @@ export async function registerFirstUser(login: string, password: string) {
     )
     return true
   } catch (error) {
-    if (error instanceof MediaApiError && error.status === 409) return false
+    if (error instanceof ApiError && error.status === 409) return false
     throw error
   }
 }
@@ -194,6 +161,6 @@ export async function deleteMedia(token: string, id: string) {
       'Nie udało się usunąć pliku.',
     )
   } catch (error) {
-    if (!(error instanceof MediaApiError && error.status === 404)) throw error
+    if (!(error instanceof ApiError && error.status === 404)) throw error
   }
 }

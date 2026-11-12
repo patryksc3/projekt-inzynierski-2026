@@ -19,12 +19,14 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { MediaArtwork } from '@/components/media-artwork'
-import { Dashboard } from '@/features/dashboard'
-import { Library } from '@/features/library'
 import { AuthScreen } from '@/features/auth-screen'
+import { Dashboard } from '@/features/dashboard'
+import { Devices } from '@/features/devices'
+import { Library } from '@/features/library'
+import { isUnauthorized } from '@/lib/api'
 import { contentQueryOptions } from '@/lib/content-query'
+import { devicesQueryKey, listDevices } from '@/lib/devices-api'
 import {
-  isUnauthorized,
   listMedia,
   mediaQueryKey,
   sessionExpiredMessage,
@@ -41,8 +43,17 @@ type Preview =
   | { type: 'about' }
   | null
 
+const pageTitles: Record<Page, string> = {
+  dashboard: 'Pulpit',
+  library: 'Biblioteka mediów',
+  devices: 'Urządzenia',
+}
+
 function currentPage(): Page {
-  return window.location.hash === '#library' ? 'library' : 'dashboard'
+  const hash = window.location.hash
+  if (hash === '#library') return 'library'
+  if (hash === '#devices') return 'devices'
+  return 'dashboard'
 }
 
 export default function App() {
@@ -61,6 +72,10 @@ export default function App() {
     )
     queryClient.removeQueries({
       queryKey: mediaQueryKey(ended.id),
+      exact: true,
+    })
+    queryClient.removeQueries({
+      queryKey: devicesQueryKey(ended.id),
       exact: true,
     })
   }
@@ -83,6 +98,20 @@ export default function App() {
     enabled: page === 'library' && !!session,
     retry: false,
   })
+  const devicesQuery = useQuery({
+    queryKey: devicesQueryKey(session?.id),
+    queryFn: async ({ signal }) => {
+      if (!session) throw new Error('Zaloguj się, aby pobrać listę urządzeń.')
+      try {
+        return await listDevices(session.token, signal)
+      } catch (error) {
+        if (isUnauthorized(error)) endSession(session, sessionExpiredMessage)
+        throw error
+      }
+    },
+    enabled: page === 'devices' && !!session,
+    retry: false,
+  })
   const { media = [], playlists = [], schedule = [] } = contentQuery.data ?? {}
 
   useEffect(() => {
@@ -92,11 +121,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const title = session
-      ? page === 'dashboard'
-        ? 'Pulpit'
-        : 'Biblioteka mediów'
-      : 'Dostęp do panelu'
+    const title = session ? pageTitles[page] : 'Dostęp do panelu'
     document.title = `${title} — pixto`
   }, [page, session])
 
@@ -118,7 +143,11 @@ export default function App() {
   const openPlaylist = (item: Playlist) =>
     setPreview({ type: 'playlist', item })
 
-  const currentQuery = page === 'dashboard' ? contentQuery : libraryQuery
+  const currentQuery = {
+    dashboard: contentQuery,
+    library: libraryQuery,
+    devices: devicesQuery,
+  }[page]
 
   return (
     <AppShell
@@ -159,6 +188,13 @@ export default function App() {
           session={session}
           search={search}
           onSearch={setSearch}
+          onSessionExpired={() => endSession(session, sessionExpiredMessage)}
+        />
+      ) : page === 'devices' && devicesQuery.data ? (
+        <Devices
+          key={session.id}
+          devices={devicesQuery.data}
+          session={session}
           onSessionExpired={() => endSession(session, sessionExpiredMessage)}
         />
       ) : (
