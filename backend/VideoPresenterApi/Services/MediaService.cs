@@ -12,6 +12,7 @@ public sealed class MediaService(
     IOptions<MediaStorageSettings> options) : IMediaService
 {
     private const int HeaderLength = 16;
+    private const string InvalidNameCharacters = "<>:\"/\\|?*";
 
     private static readonly Dictionary<string, (MediaKind Kind, string ContentType)> AllowedExtensions =
         new(StringComparer.OrdinalIgnoreCase)
@@ -93,6 +94,35 @@ public sealed class MediaService(
             .AsNoTracking()
             .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
 
+    public async Task<RenameMediaResult> RenameAsync(Guid id, string? name, CancellationToken cancellationToken)
+    {
+        var stem = name?.Trim();
+        if (string.IsNullOrEmpty(stem) || stem is "." or "..")
+            return new(null, "Podaj nazwę pliku.");
+
+        if (stem.Any(c => char.IsControl(c) || InvalidNameCharacters.Contains(c)))
+            return new(null, "Nazwa pliku zawiera niedozwolone znaki.");
+
+        var item = await dbContext.MediaItems.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+        if (item is null)
+            return new(null);
+
+        var extension = Path.GetExtension(item.OriginalName);
+        if (stem.Length + extension.Length > 255)
+            return new(null, "Nazwa pliku wraz z rozszerzeniem może mieć najwyżej 255 znaków.");
+
+        item.DisplayName = stem + extension;
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return new(item);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return new(null);
+        }
+    }
+
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
         var item = await dbContext.MediaItems.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
@@ -108,6 +138,9 @@ public sealed class MediaService(
     }
 
     public Stream? OpenContent(MediaItem item) => storage.OpenRead(item.StorageKey);
+
+    public Task<Stream?> OpenThumbnailAsync(MediaItem item, CancellationToken cancellationToken) =>
+        storage.OpenThumbnailAsync(item.StorageKey, item.Kind == MediaKind.Video, cancellationToken);
 
     private static bool MatchesSignature(string extension, ReadOnlySpan<byte> h)
     {

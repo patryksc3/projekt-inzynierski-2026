@@ -1,4 +1,5 @@
 import { ArrowUpRight, FileImage, Film } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { MediaArtwork } from '@/components/media-artwork'
 import type { MediaItem } from '@/types/content'
 
@@ -11,9 +12,11 @@ type CardMedia = Pick<
 export function MediaCard<T extends CardMedia>({
   item,
   onSelect,
+  thumbnail,
 }: {
   item: T
   onSelect: (item: T) => void
+  thumbnail?: ReactNode
 }) {
   const FileIcon = item.kind === 'video' ? Film : FileImage
   return (
@@ -23,13 +26,14 @@ export function MediaCard<T extends CardMedia>({
       aria-label={`${item.artwork ? 'Podgląd' : 'Szczegóły'}: ${item.name}`}
     >
       <div className="media-thumbnail">
-        {item.artwork ? (
-          <MediaArtwork kind={item.artwork} />
-        ) : (
-          <div className="media-artwork" aria-hidden="true">
-            <FileIcon size={17} />
-          </div>
-        )}
+        {thumbnail ??
+          (item.artwork ? (
+            <MediaArtwork kind={item.artwork} />
+          ) : (
+            <div className="media-artwork" aria-hidden="true">
+              <FileIcon size={17} />
+            </div>
+          ))}
       </div>
       <div className="media-card-content">
         <strong>{item.name}</strong>

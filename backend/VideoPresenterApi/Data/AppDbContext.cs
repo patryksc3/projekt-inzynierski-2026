@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<MediaItem> MediaItems => Set<MediaItem>();
     public DbSet<Playlist> Playlists => Set<Playlist>();
     public DbSet<PlaylistItem> PlaylistItems => Set<PlaylistItem>();
+    public DbSet<ScheduleBlock> ScheduleBlocks => Set<ScheduleBlock>();
 
     internal static bool IsPlaylistMediaConflict(DbUpdateException exception) =>
         exception.InnerException is PostgresException
@@ -54,6 +55,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         media.Property(m => m.OriginalName)
             .HasMaxLength(255)
             .IsRequired();
+        media.Property(m => m.DisplayName).HasMaxLength(255);
         media.Property(m => m.ContentType)
             .HasMaxLength(128)
             .IsRequired();
@@ -86,6 +88,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany()
             .HasForeignKey(i => i.MediaId)
             .HasConstraintName(PlaylistMediaForeignKey)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var scheduleBlock = modelBuilder.Entity<ScheduleBlock>();
+        scheduleBlock.ToTable("ScheduleBlocks", table =>
+            table.HasCheckConstraint("CK_ScheduleBlocks_TimeRange", "\"StartsAt\" < \"EndsAt\""));
+        scheduleBlock.Property(b => b.Version).IsConcurrencyToken();
+        scheduleBlock.HasIndex(b => new { b.DeviceId, b.StartsAt });
+        scheduleBlock.HasOne(b => b.Device)
+            .WithMany()
+            .HasForeignKey(b => b.DeviceId)
+            .OnDelete(DeleteBehavior.Restrict);
+        scheduleBlock.HasOne(b => b.Playlist)
+            .WithMany()
+            .HasForeignKey(b => b.PlaylistId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

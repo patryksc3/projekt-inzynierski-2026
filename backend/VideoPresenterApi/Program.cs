@@ -27,6 +27,7 @@ builder.Services.AddScoped<IDevicesService, DevicesService>();
 var mediaSettings = builder.Configuration.GetSection(MediaStorageSettings.SectionName).Get<MediaStorageSettings>()
     ?? new MediaStorageSettings();
 builder.Services.Configure<MediaStorageSettings>(builder.Configuration.GetSection(MediaStorageSettings.SectionName));
+builder.Services.AddSingleton<MediaThumbnailGenerator>();
 builder.Services.AddSingleton<IMediaStorage, LocalFileMediaStorage>();
 builder.Services.AddScoped<IMediaService, MediaService>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>

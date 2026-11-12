@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowDownWideNarrow,
   FileImage,
-  Film,
+  Pencil,
   Search,
   Trash2,
   Upload,
@@ -21,11 +21,14 @@ import {
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MediaCard } from '@/components/media-card'
+import { MediaThumbnail } from '@/components/media-thumbnail'
 import { isUnauthorized } from '@/lib/api'
 import {
   deleteMedia,
   mediaAccept,
   mediaQueryKey,
+  mediaThumbnailQueryKey,
+  renameMedia,
   uploadMedia,
   type LibraryMedia,
   type LibrarySession,
@@ -34,6 +37,7 @@ import {
 type LibraryDialog =
   | { type: 'upload' }
   | { type: 'preview'; item: LibraryMedia }
+  | { type: 'rename'; item: LibraryMedia }
   | { type: 'delete'; item: LibraryMedia }
 
 function MediaDetails({ item }: { item: LibraryMedia }) {
@@ -75,6 +79,7 @@ export function Library({
   const [filter, setFilter] = useState('all')
   const [ascending, setAscending] = useState(false)
   const [dialog, setDialog] = useState<LibraryDialog | null>(null)
+  const [newName, setNewName] = useState('')
   const [notice, setNotice] = useState('')
 
   async function updateMedia(
@@ -115,15 +120,44 @@ export function Library({
       await updateMedia((items) =>
         items.filter((media) => media.id !== item.id),
       )
+      queryClient.removeQueries({
+        queryKey: [...mediaThumbnailQueryKey(session.id), item.id],
+        exact: true,
+      })
       setDialog(null)
       setNotice(`Usunięto plik „${item.name}”.`)
     },
   })
-  const busy = upload.isPending || remove.isPending
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      renameMedia(session.token, id, name),
+    onError: handleMutationError,
+    onSuccess: async (item) => {
+      await updateMedia((items) =>
+        items.map((media) => (media.id === item.id ? item : media)),
+      )
+      setDialog(null)
+      setNotice(`Zmieniono nazwę na „${item.name}”.`)
+    },
+  })
+  const busy = upload.isPending || remove.isPending || rename.isPending
+  const canRename =
+    dialog?.type === 'rename' &&
+    newName.trim() !== '' &&
+    `${newName.trim()}${dialog.item.extension}` !== dialog.item.name
 
   function openDialog(next: LibraryDialog) {
     upload.reset()
     remove.reset()
+    rename.reset()
+    if (next.type === 'rename') {
+      setNewName(
+        next.item.name.slice(
+          0,
+          next.item.name.length - next.item.extension.length,
+        ),
+      )
+    }
     setNotice('')
     setDialog(next)
   }
@@ -135,11 +169,18 @@ export function Library({
     if (file instanceof File) upload.mutate(file)
   }
 
+  function handleRename(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (busy || !canRename || dialog?.type !== 'rename') return
+    rename.mutate({ id: dialog.item.id, name: newName.trim() })
+  }
+
   function closeDialog() {
     if (busy) return
     setDialog(null)
     upload.reset()
     remove.reset()
+    rename.reset()
   }
 
   const imageCount = media.filter((item) => item.kind === 'image').length
@@ -236,10 +277,24 @@ export function Library({
                     <MediaCard
                       item={item}
                       onSelect={(item) => openDialog({ type: 'preview', item })}
+                      thumbnail={
+                        <MediaThumbnail item={item} session={session} />
+                      }
                     />
                     <Button
                       variant="ghost"
                       size="icon-sm"
+                      className="shrink-0"
+                      aria-label={`Zmień nazwę pliku ${item.name}`}
+                      title="Zmień nazwę"
+                      onClick={() => openDialog({ type: 'rename', item })}
+                    >
+                      <Pencil size={16} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0"
                       aria-label={`Usuń plik ${item.name}`}
                       onClick={() => openDialog({ type: 'delete', item })}
                     >
@@ -336,17 +391,59 @@ export function Library({
                 </DialogTitle>
                 <DialogDescription>Szczegóły materiału</DialogDescription>
               </DialogHeader>
-              <div
-                className="grid min-h-24 place-items-center rounded-md bg-secondary text-muted-foreground"
-                aria-hidden="true"
-              >
-                {dialog.item.kind === 'video' ? (
-                  <Film size={32} />
-                ) : (
-                  <FileImage size={32} />
-                )}
-              </div>
+              <MediaThumbnail
+                key={dialog.item.id}
+                item={dialog.item}
+                session={session}
+                preview
+              />
               <MediaDetails item={dialog.item} />
+            </>
+          )}
+          {dialog?.type === 'rename' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Zmień nazwę pliku</DialogTitle>
+                <DialogDescription>
+                  Podaj nową nazwę bez rozszerzenia.
+                </DialogDescription>
+              </DialogHeader>
+              <form className="grid gap-4" onSubmit={handleRename}>
+                <label className="grid gap-2 text-sm">
+                  Nowa nazwa pliku
+                  <span className="flex items-center gap-2">
+                    <Input
+                      className="min-w-0"
+                      value={newName}
+                      onChange={(event) => setNewName(event.target.value)}
+                      maxLength={255 - dialog.item.extension.length}
+                      required
+                      disabled={busy}
+                    />
+                    <span className="text-muted-foreground" aria-hidden="true">
+                      {dialog.item.extension}
+                    </span>
+                  </span>
+                </label>
+                {rename.error && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {rename.error.message}
+                  </p>
+                )}
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeDialog}
+                    disabled={busy}
+                  >
+                    Anuluj
+                  </Button>
+                  <Button type="submit" disabled={busy || !canRename}>
+                    {busy ? 'Zapisywanie…' : 'Zapisz nazwę'}
+                  </Button>
+                </DialogFooter>
+              </form>
             </>
           )}
           {dialog?.type === 'delete' && (

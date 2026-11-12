@@ -8,6 +8,7 @@ public interface IMediaStorage
 
     /// <summary>Zwraca strumień do odczytu albo null, gdy plik nie istnieje.</summary>
     Stream? OpenRead(string key);
+    Task<Stream?> OpenThumbnailAsync(string key, bool isVideo, CancellationToken cancellationToken);
 
     Task DeleteAsync(string key, CancellationToken cancellationToken);
 }

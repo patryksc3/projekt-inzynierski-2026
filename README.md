@@ -14,7 +14,7 @@ npm run dev
 
 Vite wypisze lokalny adres aplikacji. Pozostałe polecenia: `npm run build` (kontrola TypeScript i build produkcyjny), `npm run preview` (podgląd buildu), `npm run lint` (analiza kodu), `npm run format` i `npm run format:check` (Prettier).
 
-Biblioteka mediów i playlisty wymagają uruchomionego API z dostępem do PostgreSQL. Przed pierwszym startem skonfiguruj `ConnectionStrings:Default` dla swojej bazy i wygeneruj lokalny klucz JWT. Projekt ma już skonfigurowane `Jwt:Issuer` i `Jwt:Audience`. Jeśli brakuje `Jwt:SigningKey`, uruchom w PowerShellu z głównego katalogu projektu:
+Biblioteka mediów, playlisty i harmonogram wymagają uruchomionego API z dostępem do PostgreSQL. Przed pierwszym startem skonfiguruj `ConnectionStrings:Default` dla swojej bazy i wygeneruj lokalny klucz JWT. Projekt ma już skonfigurowane `Jwt:Issuer` i `Jwt:Audience`. Jeśli brakuje `Jwt:SigningKey`, uruchom w PowerShellu z głównego katalogu projektu:
 
 ```powershell
 $jwtBytes = New-Object byte[] 32
@@ -25,7 +25,7 @@ try { $jwtRandom.GetBytes($jwtBytes) } finally { $jwtRandom.Dispose() }
     dotnet user-secrets set --project backend/VideoPresenterApi
 ```
 
-Profil `http` wczytuje lokalne .NET User Secrets w trybie `Development`. Zastosuj migracje Entity Framework (w tym `AddPlaylists`) i uruchom backend z głównego katalogu projektu:
+Profil `http` wczytuje lokalne .NET User Secrets w trybie `Development`. Zastosuj migracje Entity Framework i uruchom backend z głównego katalogu projektu:
 
 ```sh
 dotnet ef database update --project backend/VideoPresenterApi -- --environment Development
@@ -40,9 +40,13 @@ Jeśli baza jest świeża, utwórz pierwsze konto przez `POST /api/authorization
 - Lokalne komponenty shadcn/ui: Button, Badge, Dialog, Sheet, Input i Tabs. Ikony Lucide, font DM Sans hostowany lokalnie.
 - Responsywny pulpit, nawigacja mobilna, biblioteka z wyszukiwaniem, filtrami i sortowaniem.
 - Dostępne z klawiatury podglądy materiałów, playlist i przykładowego planu dnia.
-- Nawigacja `#dashboard` / `#library` / `#playlists`, obsługująca przyciski wstecz i dalej przeglądarki.
+- Nawigacja `#dashboard` / `#library` / `#playlists` / `#schedule`, obsługująca przyciski wstecz i dalej przeglądarki.
 
 Pulpit pokazuje dane demonstracyjne, w tym przykładowe playlisty, harmonogram i numerowane miniatury. Po zalogowaniu biblioteka pozwala przesyłać i usuwać pliki, a edytor playlist zapisuje zestawy materiałów wraz z ich kolejnością i czasem emisji. Wyszukiwanie i filtry biblioteki działają w pamięci przeglądarki.
+
+W zakładce Harmonogram można dodać pierwszy ekran i zaplanować jednorazową emisję playlisty. Formularz wyświetla godziny w strefie przeglądarki, a API zapisuje je w UTC i odrzuca nakładające się bloki na tym samym ekranie.
+
+Backend generuje miniatury zdjęć i filmów przy użyciu [FFmpeg](https://ffmpeg.org/download.html). Udostępnij `ffmpeg` w `PATH` procesu API lub ustaw `MediaStorage:FfmpegPath` na ścieżkę do programu. Miniatury powstają przy pierwszym wyświetleniu pliku w bibliotece, także dla wcześniej przesłanych materiałów. Gdy wygenerowanie miniatury się nie powiedzie, panel wyświetli ikonę typu pliku.
 
 ## Struktura
 
@@ -90,7 +94,7 @@ Każdy etap powinien stanowić osobną, spójną zmianę możliwą do przeglądu
 1. **Gotowe:** konfiguracja i pierwsza wersja responsywnego interfejsu.
 2. **Gotowe:** biblioteka z logowaniem, listą materiałów, przesyłaniem i usuwaniem plików przez API.
 3. **Gotowe:** edytor playlist z wyborem i kolejnością materiałów, czasem emisji każdej pozycji oraz zapisem przez API.
-4. Harmonogramy: formularze i reguły emisji.
+4. **Gotowe:** harmonogram jednorazowych emisji z wyborem ekranu, edycją i kontrolą kolizji.
 5. Integracja: ASP.NET Core i JWT; TanStack Query jest już przygotowany do obsługi danych serwera.
 6. Testy integracyjne i obsługa błędów/synchronizacji; odtwarzanie offline po stronie agenta Raspberry Pi.
 

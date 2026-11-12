@@ -57,6 +57,10 @@ namespace VideoPresenterApi.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -140,6 +144,40 @@ namespace VideoPresenterApi.Migrations
                     b.ToTable("PlaylistItems");
                 });
 
+            modelBuilder.Entity("VideoPresenterApi.Models.ScheduleBlock", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("PlaylistId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlaylistId");
+
+                    b.HasIndex("DeviceId", "StartsAt");
+
+                    b.ToTable("ScheduleBlocks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ScheduleBlocks_TimeRange", "\"StartsAt\" < \"EndsAt\"");
+                        });
+                });
+
             modelBuilder.Entity("VideoPresenterApi.Models.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -187,6 +225,25 @@ namespace VideoPresenterApi.Migrations
                         .HasForeignKey("PlaylistId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.ScheduleBlock", b =>
+                {
+                    b.HasOne("VideoPresenterApi.Models.Device", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VideoPresenterApi.Models.Playlist", "Playlist")
+                        .WithMany()
+                        .HasForeignKey("PlaylistId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Device");
+
+                    b.Navigation("Playlist");
                 });
 
             modelBuilder.Entity("VideoPresenterApi.Models.Playlist", b =>

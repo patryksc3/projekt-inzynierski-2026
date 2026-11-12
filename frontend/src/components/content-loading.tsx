@@ -7,6 +7,7 @@ const loadingMessages: Record<Page, string> = {
   dashboard: 'Pobieranie materiałów i playlist.',
   library: 'Pobieranie biblioteki mediów.',
   playlists: 'Pobieranie playlist.',
+  schedule: 'Pobieranie harmonogramu.',
 }
 
 export function ContentLoading({

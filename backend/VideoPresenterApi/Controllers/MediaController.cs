@@ -62,6 +62,21 @@ public sealed class MediaController(IMediaService mediaService) : ControllerBase
         return item is null ? NotFound() : Ok(MediaItemResponse.From(item));
     }
 
+    [HttpPatch("{id:guid}/name", Name = "RenameMedia")]
+    [ProducesResponseType(typeof(MediaItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Rename(Guid id, RenameMediaRequest request, CancellationToken cancellationToken)
+    {
+        if (!IsUserToken()) return Forbid();
+
+        var result = await mediaService.RenameAsync(id, request.Name, cancellationToken);
+        if (result.Error is not null) return BadRequest(new { error = result.Error });
+        return result.Item is null
+            ? NotFound(new { error = "Plik nie jest już dostępny w bibliotece." })
+            : Ok(MediaItemResponse.From(result.Item));
+    }
+
     [HttpDelete("{id:guid}", Name = "DeleteMedia")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -81,6 +96,22 @@ public sealed class MediaController(IMediaService mediaService) : ControllerBase
         {
             return Conflict(new { error = "Materiał jest używany w playliście. Usuń go z playlist przed usunięciem z biblioteki." });
         }
+    }
+
+    [HttpGet("{id:guid}/thumbnail", Name = "GetMediaThumbnail")]
+    [Produces("image/jpeg")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetThumbnail(Guid id, CancellationToken cancellationToken)
+    {
+        if (!IsUserToken()) return Forbid();
+
+        var item = await mediaService.GetAsync(id, cancellationToken);
+        if (item is null) return NotFound();
+
+        var thumbnail = await mediaService.OpenThumbnailAsync(item, cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        return thumbnail is null ? NotFound() : File(thumbnail, "image/jpeg");
     }
 
     [HttpGet("{id:guid}/content", Name = "GetMediaContent")]

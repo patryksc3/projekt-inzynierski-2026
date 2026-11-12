@@ -18,20 +18,29 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { MediaArtwork } from '@/components/media-artwork'
 import { Dashboard } from '@/features/dashboard'
 import { Library } from '@/features/library'
 import { LibraryLogin } from '@/features/library-login'
 import { Playlists } from '@/features/playlists'
+import { Schedule } from '@/features/schedule'
 import { isUnauthorized } from '@/lib/api'
 import { contentQueryOptions } from '@/lib/content-query'
 import {
   listMedia,
   mediaQueryKey,
+  mediaThumbnailQueryKey,
   sessionExpiredMessage,
   type LibrarySession,
 } from '@/lib/media-api'
 import { listPlaylists, playlistQueryKey } from '@/lib/playlists-api'
+import {
+  devicesQueryKey,
+  listDevices,
+  listSchedule,
+  scheduleQueryKey,
+} from '@/lib/schedule-api'
 import { ContentLoading, ContentError } from '@/components/content-loading'
 import type { MediaItem, Playlist } from '@/types/content'
 import './App.css'
@@ -47,6 +56,7 @@ function currentPage(): Page {
   const hash = window.location.hash
   if (hash === '#library') return 'library'
   if (hash === '#playlists') return 'playlists'
+  if (hash === '#schedule') return 'schedule'
   return 'dashboard'
 }
 
@@ -54,6 +64,13 @@ const pageTitles: Record<Page, string> = {
   dashboard: 'Pulpit',
   library: 'Biblioteka mediów',
   playlists: 'Playlisty',
+  schedule: 'Harmonogram',
+}
+
+const signInDescriptions: Record<Exclude<Page, 'dashboard'>, string> = {
+  library: 'Zaloguj się, aby zarządzać zdjęciami i filmami.',
+  playlists: 'Zaloguj się, aby zarządzać playlistami.',
+  schedule: 'Zaloguj się, aby zarządzać harmonogramem.',
 }
 
 export default function App() {
@@ -70,14 +87,25 @@ export default function App() {
     setAuth((current) =>
       current.session?.id === ended.id ? { message } : current,
     )
-    queryClient.removeQueries({
-      queryKey: mediaQueryKey(ended.id),
-      exact: true,
-    })
-    queryClient.removeQueries({
-      queryKey: playlistQueryKey(ended.id),
-      exact: true,
-    })
+    for (const key of [
+      mediaQueryKey,
+      playlistQueryKey,
+      scheduleQueryKey,
+      devicesQueryKey,
+    ]) {
+      queryClient.removeQueries({ queryKey: key(ended.id), exact: true })
+    }
+    queryClient.removeQueries({ queryKey: mediaThumbnailQueryKey(ended.id) })
+  }
+
+  async function withSession<T>(load: (token: string) => Promise<T>) {
+    if (!session) throw new Error('Zaloguj się, aby pobrać dane.')
+    try {
+      return await load(session.token)
+    } catch (error) {
+      if (isUnauthorized(error)) endSession(session, sessionExpiredMessage)
+      throw error
+    }
   }
 
   const contentQuery = useQuery({
@@ -86,30 +114,28 @@ export default function App() {
   })
   const libraryQuery = useQuery({
     queryKey: mediaQueryKey(session?.id),
-    queryFn: async ({ signal }) => {
-      if (!session) throw new Error('Zaloguj się, aby pobrać bibliotekę.')
-      try {
-        return await listMedia(session.token, signal)
-      } catch (error) {
-        if (isUnauthorized(error)) endSession(session, sessionExpiredMessage)
-        throw error
-      }
-    },
-    enabled: page !== 'dashboard' && !!session,
+    queryFn: ({ signal }) => withSession((token) => listMedia(token, signal)),
+    enabled: (page === 'library' || page === 'playlists') && !!session,
     retry: false,
   })
   const playlistsQuery = useQuery({
     queryKey: playlistQueryKey(session?.id),
-    queryFn: async ({ signal }) => {
-      if (!session) throw new Error('Zaloguj się, aby pobrać playlisty.')
-      try {
-        return await listPlaylists(session.token, signal)
-      } catch (error) {
-        if (isUnauthorized(error)) endSession(session, sessionExpiredMessage)
-        throw error
-      }
-    },
-    enabled: page === 'playlists' && !!session,
+    queryFn: ({ signal }) =>
+      withSession((token) => listPlaylists(token, signal)),
+    enabled: (page === 'playlists' || page === 'schedule') && !!session,
+    retry: false,
+  })
+  const scheduleQuery = useQuery({
+    queryKey: scheduleQueryKey(session?.id),
+    queryFn: ({ signal }) =>
+      withSession((token) => listSchedule(token, signal)),
+    enabled: page === 'schedule' && !!session,
+    retry: false,
+  })
+  const devicesQuery = useQuery({
+    queryKey: devicesQueryKey(session?.id),
+    queryFn: ({ signal }) => withSession((token) => listDevices(token, signal)),
+    enabled: page === 'schedule' && !!session,
     retry: false,
   })
   const { media = [], playlists = [], schedule = [] } = contentQuery.data ?? {}
@@ -133,16 +159,22 @@ export default function App() {
   const openPlaylist = (item: Playlist) =>
     setPreview({ type: 'playlist', item })
 
-  const currentQuery =
-    page === 'dashboard'
-      ? contentQuery
-      : page === 'library'
-        ? libraryQuery
-        : playlistsQuery
+  const currentQuery = {
+    dashboard: contentQuery,
+    library: libraryQuery,
+    playlists: playlistsQuery,
+    schedule: scheduleQuery,
+  }[page]
+
+  function refreshScheduleOptions() {
+    void playlistsQuery.refetch()
+    void devicesQuery.refetch()
+  }
 
   function refresh() {
     void currentQuery.refetch()
     if (page === 'playlists') void libraryQuery.refetch()
+    if (page === 'schedule') refreshScheduleOptions()
   }
 
   return (
@@ -155,7 +187,9 @@ export default function App() {
       mediaCount={session ? libraryQuery.data?.length : undefined}
       isFetching={
         currentQuery.isFetching ||
-        (page === 'playlists' && libraryQuery.isFetching)
+        (page === 'playlists' && libraryQuery.isFetching) ||
+        (page === 'schedule' &&
+          (devicesQuery.isFetching || playlistsQuery.isFetching))
       }
       onRefresh={page === 'dashboard' || session ? refresh : undefined}
     >
@@ -168,11 +202,7 @@ export default function App() {
       {page !== 'dashboard' && !session ? (
         <LibraryLogin
           title={pageTitles[page]}
-          description={
-            page === 'playlists'
-              ? 'Zaloguj się, aby zarządzać playlistami.'
-              : 'Zaloguj się, aby zarządzać zdjęciami i filmami.'
-          }
+          description={signInDescriptions[page]}
           message={message}
           onSignIn={(session) => setAuth({ session })}
         />
@@ -204,6 +234,20 @@ export default function App() {
           session={session}
           onLibrary={() => navigate('library')}
           onRetryMedia={() => void libraryQuery.refetch()}
+          onSessionExpired={() => endSession(session, sessionExpiredMessage)}
+        />
+      ) : page === 'schedule' && session && scheduleQuery.data ? (
+        <Schedule
+          key={session.id}
+          blocks={scheduleQuery.data}
+          devices={devicesQuery.data}
+          playlists={playlistsQuery.data}
+          optionsError={
+            devicesQuery.error?.message ?? playlistsQuery.error?.message
+          }
+          session={session}
+          onPlaylists={() => navigate('playlists')}
+          onRetryOptions={refreshScheduleOptions}
           onSessionExpired={() => endSession(session, sessionExpiredMessage)}
         />
       ) : (
@@ -350,11 +394,15 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              <p className="dialog-note">
-                <Info size={15} />
-                Plan prezentuje docelowy sposób emisji. Zapisywanie
-                harmonogramów dodamy po integracji z backendem.
-              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPreview(null)
+                  navigate('schedule')
+                }}
+              >
+                Otwórz harmonogram emisji
+              </Button>
             </>
           )}
           {preview?.type === 'about' && (

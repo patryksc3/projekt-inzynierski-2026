@@ -11,6 +11,7 @@ public class MediaItem
     public Guid Id { get; set; } = Guid.NewGuid();
 
     public string OriginalName { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
 
     public string ContentType { get; set; } = string.Empty;
 

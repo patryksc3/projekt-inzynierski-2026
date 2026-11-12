@@ -9,7 +9,8 @@ public sealed record MediaItemResponse(
     string ContentType,
     long SizeBytes,
     string Sha256,
-    DateTimeOffset CreatedAt)
+    DateTimeOffset CreatedAt,
+    string Name)
 {
     public static MediaItemResponse From(MediaItem item) => new(
         item.Id,
@@ -18,5 +19,6 @@ public sealed record MediaItemResponse(
         item.ContentType,
         item.SizeBytes,
         item.Sha256,
-        item.CreatedAt);
+        item.CreatedAt,
+        item.DisplayName ?? item.OriginalName);
 }

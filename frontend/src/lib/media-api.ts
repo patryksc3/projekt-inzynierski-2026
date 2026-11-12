@@ -1,7 +1,9 @@
 import { ApiError, apiRequest } from '@/lib/api'
 import type { MediaItem } from '@/types/content'
 
-export type LibraryMedia = Omit<MediaItem, 'artwork' | 'duration'>
+export type LibraryMedia = Omit<MediaItem, 'artwork' | 'duration'> & {
+  extension: string
+}
 
 export interface LibrarySession {
   id: number
@@ -28,6 +30,8 @@ export const mediaAccept = mediaExtensions.join(',')
 export const sessionExpiredMessage = 'Sesja wygasła. Zaloguj się ponownie.'
 export const mediaQueryKey = (sessionId?: number) =>
   ['library-media', sessionId] as const
+export const mediaThumbnailQueryKey = (sessionId: number) =>
+  ['media-thumbnail', sessionId] as const
 let nextSessionId = 0
 
 export async function signIn(
@@ -78,12 +82,13 @@ function toLibraryMedia(data: unknown): LibraryMedia {
     throw new Error('Serwer zwrócił nieprawidłowe metadane pliku.')
   }
 
-  const extension = item.originalName.match(/\.([^.]+)$/)?.[1]
+  const extension = item.originalName.match(/\.[^.]+$/)?.[0] ?? ''
   return {
     id: item.id,
-    name: item.originalName,
+    name: typeof item.name === 'string' ? item.name : item.originalName,
     kind: item.kind === 'Video' ? 'video' : 'image',
-    format: extension?.toUpperCase() ?? 'Plik',
+    extension,
+    format: extension ? extension.slice(1).toUpperCase() : 'Plik',
     size: formatSize(item.sizeBytes),
     addedAt: dateFormat.format(new Date(item.createdAt)),
   }
@@ -100,6 +105,24 @@ export async function listMedia(token: string, signal: AbortSignal) {
     throw new Error('Serwer zwrócił nieprawidłową listę plików.')
   }
   return items.map(toLibraryMedia)
+}
+
+export async function fetchMediaThumbnail(
+  token: string,
+  id: string,
+  signal: AbortSignal,
+) {
+  try {
+    const response = await apiRequest(
+      `${mediaPath}/${encodeURIComponent(id)}/thumbnail`,
+      { headers: { Authorization: `Bearer ${token}` }, signal },
+      'Nie udało się pobrać miniatury.',
+    )
+    return await response.blob()
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null
+    throw error
+  }
 }
 
 export async function uploadMedia(token: string, file: File) {
@@ -132,4 +155,20 @@ export async function deleteMedia(token: string, id: string) {
   } catch (error) {
     if (!(error instanceof ApiError && error.status === 404)) throw error
   }
+}
+
+export async function renameMedia(token: string, id: string, name: string) {
+  const response = await apiRequest(
+    `${mediaPath}/${encodeURIComponent(id)}/name`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name }),
+    },
+    'Nie udało się zmienić nazwy pliku.',
+  )
+  return toLibraryMedia(await response.json())
 }

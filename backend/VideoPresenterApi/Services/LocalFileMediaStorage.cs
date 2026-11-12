@@ -4,12 +4,16 @@ using VideoPresenterApi.Configuration;
 
 namespace VideoPresenterApi.Services;
 
-public sealed class LocalFileMediaStorage : IMediaStorage
+public sealed class LocalFileMediaStorage : IMediaStorage, IDisposable
 {
     private readonly string rootPath;
+    private readonly MediaThumbnailGenerator thumbnails;
+    private readonly SemaphoreSlim thumbnailLock = new(1);
 
-    public LocalFileMediaStorage(IOptions<MediaStorageSettings> options, IHostEnvironment environment)
+    public LocalFileMediaStorage(
+        IOptions<MediaStorageSettings> options, IHostEnvironment environment, MediaThumbnailGenerator thumbnails)
     {
+        this.thumbnails = thumbnails;
         var configured = options.Value.RootPath;
         rootPath = Path.GetFullPath(Path.IsPathRooted(configured)
             ? configured
@@ -60,10 +64,59 @@ public sealed class LocalFileMediaStorage : IMediaStorage
             : null;
     }
 
-    public Task DeleteAsync(string key, CancellationToken cancellationToken)
+    public async Task<Stream?> OpenThumbnailAsync(string key, bool isVideo, CancellationToken cancellationToken)
     {
-        TryDelete(ResolvePath(key));
-        return Task.CompletedTask;
+        var sourcePath = ResolvePath(key);
+        var thumbnailPath = sourcePath + ".thumbnail.jpg";
+        if (OpenCachedThumbnail(thumbnailPath) is { } cached) return cached;
+
+        await thumbnailLock.WaitAsync(cancellationToken);
+        var tempPath = $"{thumbnailPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            if (OpenCachedThumbnail(thumbnailPath) is { } existing) return existing;
+            if (!File.Exists(sourcePath) ||
+                !await thumbnails.GenerateAsync(sourcePath, tempPath, isVideo, cancellationToken))
+                return null;
+
+            File.Move(tempPath, thumbnailPath, overwrite: true);
+            return OpenCachedThumbnail(thumbnailPath);
+        }
+        finally
+        {
+            TryDelete(tempPath);
+            thumbnailLock.Release();
+        }
+    }
+
+    public async Task DeleteAsync(string key, CancellationToken cancellationToken)
+    {
+        var path = ResolvePath(key);
+        await thumbnailLock.WaitAsync();
+        try
+        {
+            TryDelete(path);
+            TryDelete(path + ".thumbnail.jpg");
+        }
+        finally
+        {
+            thumbnailLock.Release();
+        }
+    }
+
+    public void Dispose() => thumbnailLock.Dispose();
+
+    private static FileStream? OpenCachedThumbnail(string path)
+    {
+        try
+        {
+            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
+                bufferSize: 81920, useAsync: true);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
     }
 
     private string ResolvePath(string key)
