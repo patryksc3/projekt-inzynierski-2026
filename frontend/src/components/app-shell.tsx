@@ -21,9 +21,14 @@ import {
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
-export type Page = 'dashboard' | 'library'
+export type Page = 'dashboard' | 'library' | 'devices'
 
 const mainContentId = 'main-content'
+const workspaceLabels: Record<Page, string> = {
+  dashboard: 'Pulpit',
+  library: 'Biblioteka',
+  devices: 'Urządzenia',
+}
 
 export function PlayMark() {
   return (
@@ -68,6 +73,15 @@ function Navigation({
         {mediaCount !== undefined && (
           <span className="navigation-count">{mediaCount}</span>
         )}
+      </PageLink>
+      <PageLink
+        page="devices"
+        navigate={navigate}
+        className={cn('navigation-link', page === 'devices' && 'is-active')}
+        aria-current={page === 'devices' ? 'page' : undefined}
+      >
+        <Monitor size={17} />
+        Urządzenia
       </PageLink>
       <span
         className="navigation-link navigation-unavailable"
@@ -213,7 +227,7 @@ export function AppShell({
           <Monitor size={15} />
           <span>Przestrzeń uczelni</span>
           <span className="workspace-slash">/</span>
-          <strong>{page === 'dashboard' ? 'Pulpit' : 'Biblioteka'}</strong>
+          <strong>{workspaceLabels[page]}</strong>
         </div>
         <div className="workspace-actions">
           {page === 'dashboard' && (

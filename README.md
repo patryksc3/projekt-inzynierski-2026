@@ -14,7 +14,7 @@ npm run dev
 
 Vite wypisze lokalny adres aplikacji. Pozostałe polecenia: `npm run build` (kontrola TypeScript i build produkcyjny), `npm run preview` (podgląd buildu), `npm run lint` (analiza kodu), `npm run format` i `npm run format:check` (Prettier).
 
-Biblioteka mediów wymaga uruchomionego API z dostępem do PostgreSQL. Przed pierwszym startem skonfiguruj `ConnectionStrings:Default` dla swojej bazy i wygeneruj lokalny klucz JWT. Projekt ma już skonfigurowane `Jwt:Issuer` i `Jwt:Audience`. Jeśli brakuje `Jwt:SigningKey`, uruchom w PowerShellu z głównego katalogu projektu:
+Panel wymaga uruchomionego API z dostępem do PostgreSQL. Przed pierwszym startem skonfiguruj `ConnectionStrings:Default` dla swojej bazy i wygeneruj lokalny klucz JWT. Projekt ma już skonfigurowane `Jwt:Issuer` i `Jwt:Audience`. Jeśli brakuje `Jwt:SigningKey`, uruchom w PowerShellu z głównego katalogu projektu:
 
 ```powershell
 $jwtBytes = New-Object byte[] 32
@@ -31,7 +31,7 @@ Profil `http` wczytuje lokalne .NET User Secrets w trybie `Development`. Uruchom
 dotnet run --project backend/VideoPresenterApi --launch-profile http
 ```
 
-Jeśli baza jest świeża, zastosuj migracje Entity Framework i utwórz pierwsze konto przez `POST /api/authorization/register-user` w Swaggerze. W bibliotece zaloguj się tym kontem. Vite przekazuje żądania `/api` na `http://localhost:5083`. Zmienna środowiskowa `API_PROXY_TARGET` pozwala wskazać inny adres podczas uruchamiania Vite. W produkcji udostępnij frontend i trasę `/api` pod wspólnym adresem HTTPS.
+Jeśli baza jest świeża, zastosuj migracje Entity Framework. Gdy w bazie nie ma użytkowników, panel wyświetli formularz utworzenia pierwszego konta. Po jego utworzeniu zaloguj się w panelu. Vite przekazuje żądania `/api` na `http://localhost:5083`. Zmienna środowiskowa `API_PROXY_TARGET` pozwala wskazać inny adres podczas uruchamiania Vite. W produkcji udostępnij frontend i trasę `/api` pod wspólnym adresem HTTPS.
 
 ## Etap 01 — fundament i interfejs
 

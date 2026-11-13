@@ -21,9 +21,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MediaCard } from '@/components/media-card'
+import { isUnauthorized } from '@/lib/api'
 import {
   deleteMedia,
-  isUnauthorized,
   mediaAccept,
   mediaQueryKey,
   uploadMedia,

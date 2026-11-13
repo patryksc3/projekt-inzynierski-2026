@@ -3,6 +3,12 @@ import type { Page } from '@/components/app-shell'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 
+const loadingDescriptions: Record<Page, string> = {
+  dashboard: 'Pobieranie materiałów i playlist.',
+  library: 'Pobieranie biblioteki mediów.',
+  devices: 'Pobieranie listy urządzeń.',
+}
+
 export function ContentLoading({
   page,
   paused = false,
@@ -24,9 +30,7 @@ export function ContentLoading({
           <p>
             {paused
               ? 'Dane pojawią się po odzyskaniu połączenia.'
-              : page === 'library'
-                ? 'Pobieranie biblioteki mediów.'
-                : 'Pobieranie materiałów i playlist.'}
+              : loadingDescriptions[page]}
           </p>
         </div>
       </div>
@@ -52,6 +56,12 @@ export function ContentLoading({
               <Skeleton className="loading-panel" />
             </div>
           </>
+        ) : page === 'devices' ? (
+          <div className="surface loading-table">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton className="skeleton-row" key={i} />
+            ))}
+          </div>
         ) : (
           <div className="surface loading-library">
             <div className="loading-toolbar">

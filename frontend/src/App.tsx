@@ -19,12 +19,14 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { MediaArtwork } from '@/components/media-artwork'
+import { AuthScreen } from '@/features/auth-screen'
 import { Dashboard } from '@/features/dashboard'
+import { Devices } from '@/features/devices'
 import { Library } from '@/features/library'
-import { LibraryLogin } from '@/features/library-login'
+import { isUnauthorized } from '@/lib/api'
 import { contentQueryOptions } from '@/lib/content-query'
+import { devicesQueryKey, listDevices } from '@/lib/devices-api'
 import {
-  isUnauthorized,
   listMedia,
   mediaQueryKey,
   sessionExpiredMessage,
@@ -41,8 +43,17 @@ type Preview =
   | { type: 'about' }
   | null
 
+const pageTitles: Record<Page, string> = {
+  dashboard: 'Pulpit',
+  library: 'Biblioteka mediów',
+  devices: 'Urządzenia',
+}
+
 function currentPage(): Page {
-  return window.location.hash === '#library' ? 'library' : 'dashboard'
+  const hash = window.location.hash
+  if (hash === '#library') return 'library'
+  if (hash === '#devices') return 'devices'
+  return 'dashboard'
 }
 
 export default function App() {
@@ -63,11 +74,15 @@ export default function App() {
       queryKey: mediaQueryKey(ended.id),
       exact: true,
     })
+    queryClient.removeQueries({
+      queryKey: devicesQueryKey(ended.id),
+      exact: true,
+    })
   }
 
   const contentQuery = useQuery({
     ...contentQueryOptions,
-    enabled: page === 'dashboard',
+    enabled: page === 'dashboard' && !!session,
   })
   const libraryQuery = useQuery({
     queryKey: mediaQueryKey(session?.id),
@@ -83,6 +98,20 @@ export default function App() {
     enabled: page === 'library' && !!session,
     retry: false,
   })
+  const devicesQuery = useQuery({
+    queryKey: devicesQueryKey(session?.id),
+    queryFn: async ({ signal }) => {
+      if (!session) throw new Error('Zaloguj się, aby pobrać listę urządzeń.')
+      try {
+        return await listDevices(session.token, signal)
+      } catch (error) {
+        if (isUnauthorized(error)) endSession(session, sessionExpiredMessage)
+        throw error
+      }
+    },
+    enabled: page === 'devices' && !!session,
+    retry: false,
+  })
   const { media = [], playlists = [], schedule = [] } = contentQuery.data ?? {}
 
   useEffect(() => {
@@ -92,8 +121,18 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    document.title = `${page === 'dashboard' ? 'Pulpit' : 'Biblioteka mediów'} — pixto`
-  }, [page])
+    const title = session ? pageTitles[page] : 'Dostęp do panelu'
+    document.title = `${title} — pixto`
+  }, [page, session])
+
+  if (!session) {
+    return (
+      <AuthScreen
+        message={message}
+        onSignIn={(session) => setAuth({ session })}
+      />
+    )
+  }
 
   const navigate = (next: Page) => {
     window.location.hash = next
@@ -104,22 +143,25 @@ export default function App() {
   const openPlaylist = (item: Playlist) =>
     setPreview({ type: 'playlist', item })
 
-  const currentQuery = page === 'dashboard' ? contentQuery : libraryQuery
+  const currentQuery = {
+    dashboard: contentQuery,
+    library: libraryQuery,
+    devices: devicesQuery,
+  }[page]
 
   return (
     <AppShell
       page={page}
       navigate={navigate}
       onHelp={() => setPreview({ type: 'about' })}
-      accountLogin={session?.login}
-      onSignOut={session ? () => endSession(session) : undefined}
-      mediaCount={session ? libraryQuery.data?.length : undefined}
+      accountLogin={session.login}
+      onSignOut={() => {
+        setPreview(null)
+        endSession(session)
+      }}
+      mediaCount={libraryQuery.data?.length}
       isFetching={currentQuery.isFetching}
-      onRefresh={
-        page === 'dashboard' || session
-          ? () => void currentQuery.refetch()
-          : undefined
-      }
+      onRefresh={() => void currentQuery.refetch()}
     >
       {currentQuery.isRefetchError && (
         <p className="refresh-error" role="alert">
@@ -129,12 +171,7 @@ export default function App() {
           </button>
         </p>
       )}
-      {page === 'library' && !session ? (
-        <LibraryLogin
-          message={message}
-          onSignIn={(session) => setAuth({ session })}
-        />
-      ) : currentQuery.isPending ? (
+      {currentQuery.isPending ? (
         <ContentLoading page={page} paused={currentQuery.isPaused} />
       ) : page === 'dashboard' && contentQuery.data ? (
         <Dashboard
@@ -144,13 +181,20 @@ export default function App() {
           onPlaylist={openPlaylist}
           onSchedule={() => setPreview({ type: 'schedule' })}
         />
-      ) : page === 'library' && session && libraryQuery.data ? (
+      ) : page === 'library' && libraryQuery.data ? (
         <Library
           key={session.id}
           media={libraryQuery.data}
           session={session}
           search={search}
           onSearch={setSearch}
+          onSessionExpired={() => endSession(session, sessionExpiredMessage)}
+        />
+      ) : page === 'devices' && devicesQuery.data ? (
+        <Devices
+          key={session.id}
+          devices={devicesQuery.data}
+          session={session}
           onSessionExpired={() => endSession(session, sessionExpiredMessage)}
         />
       ) : (
