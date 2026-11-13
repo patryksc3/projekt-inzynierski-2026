@@ -1,7 +1,9 @@
+import argparse
 import hashlib
 import json
 import os
 import sqlite3
+import stat
 import threading
 import time
 from pathlib import Path
@@ -15,11 +17,142 @@ BASE_DIR = Path(__file__).resolve().parent
 CACHE_DIR = BASE_DIR / "media_cache"
 DB_PATH = BASE_DIR / "agent_data.db"
 MOCK_MANIFEST_PATH = BASE_DIR / "mock_manifest.json"
+CREDENTIALS_FILE = BASE_DIR / ".device_credential"
 
-API_BASE_URL = os.getenv("RPI_API_URL", "http://localhost:5000/api/device/sync")
-JWT_TOKEN = os.getenv("RPI_JWT_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.mock_token")
-USE_MOCK_API = True
+API_ORIGIN = os.getenv("RPI_API_ORIGIN", "https://localhost:5001").rstrip("/")
+PAIR_ENDPOINT = f"{API_ORIGIN}/api/devices/get-credentials"
+LOGIN_ENDPOINT = f"{API_ORIGIN}/api/devices/login"
+SYNC_ENDPOINT = os.getenv("RPI_SYNC_URL", f"{API_ORIGIN}/api/media")
+
+USE_MOCK_API = os.getenv("RPI_USE_MOCK", "true").lower() == "true"
 SYNC_INTERVAL_SEC = 15
+
+JWT_REFRESH_MARGIN_SEC = 13 * 60
+
+
+class DeviceAuthManager:
+
+    def __init__(self, credentials_path: Path, verify_ssl: bool = True):
+        self.credentials_path = credentials_path
+        self.verify_ssl = verify_ssl
+        self._jwt_token: str | None = None
+        self._token_expires_at: float = 0.0
+        self._lock = threading.Lock()
+
+    def is_paired(self) -> bool:
+        return self.credentials_path.exists() and self.credentials_path.stat().st_size > 0
+
+    def _save_password_securely(self, password: str):
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        mode = stat.S_IRUSR | stat.S_IWUSR
+        fd = os.open(self.credentials_path, flags, mode)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(password.strip())
+        finally:
+            os.chmod(self.credentials_path, mode)
+        print(f"[AUTH] Zapisano hasło urządzenia w {self.credentials_path.name} (uprawnienia 0600).")
+
+    def _load_password(self) -> str:
+        if not self.is_paired():
+            raise RuntimeError("Urządzenie nie posiada zapisanego hasła (wymagane parowanie).")
+        return self.credentials_path.read_text(encoding="utf-8").strip()
+
+    def pair_device(self, pair_code: str) -> bool:
+        print("[AUTH] Parowanie urządzenia przez POST /api/devices/get-credentials...")
+        try:
+            resp = requests.post(
+                PAIR_ENDPOINT,
+                json={"pairCode": pair_code.strip()},
+                timeout=10,
+                verify=self.verify_ssl
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            password = data.get("password")
+            if not password:
+                print("[AUTH] Błąd parowania: odpowiedź API nie zawiera pola 'password'.")
+                return False
+
+            self._save_password_securely(password)
+            return True
+        except Exception as e:
+            print(f"[AUTH] Błąd podczas parowania urządzenia: {e}")
+            return False
+
+    def login_device(self) -> bool:
+
+        try:
+            password = self._load_password()
+            resp = requests.post(
+                LOGIN_ENDPOINT,
+                json={"password": password},
+                timeout=10,
+                verify=self.verify_ssl
+            )
+            resp.raise_for_status()
+
+            token = None
+            try:
+                data = resp.json()
+                if isinstance(data, str):
+                    token = data.strip()
+                elif isinstance(data, dict):
+
+                    for key in ("token", "accessToken", "jwt", "jwtToken", "deviceToken", "Token", "access_token"):
+                        if isinstance(data.get(key), str) and data.get(key):
+                            token = data[key].strip()
+                            break
+                    if not token:
+                        for val in data.values():
+                            if isinstance(val, str) and val.startswith("eyJ"):
+                                token = val.strip()
+                                break
+                    if not token:
+                        print(f"[AUTH] Otrzymany JSON z /api/devices/login: {data}")
+            except ValueError:
+
+                raw_text = resp.text.strip().strip('"')
+                if raw_text.startswith("eyJ"):
+                    token = raw_text
+
+            if not token:
+                print(f"[AUTH] Błąd logowania: brak tokenu JWT w odpowiedzi ({resp.text}).")
+                return False
+
+            with self._lock:
+                self._jwt_token = token
+                self._token_expires_at = time.time() + JWT_REFRESH_MARGIN_SEC
+
+            print("[AUTH] Pobrano nowy token JWT urządzenia (ważny 15 min).")
+            return True
+        except Exception as e:
+            print(f"[AUTH] Błąd logowania urządzenia (/api/devices/login): {e}")
+            return False
+
+    def get_valid_token(self, force_refresh: bool = False) -> str | None:
+        with self._lock:
+            needs_refresh = (
+                force_refresh
+                or self._jwt_token is None
+                or time.time() >= self._token_expires_at
+            )
+
+        if needs_refresh:
+            if not self.login_device():
+                return None
+
+        with self._lock:
+            return self._jwt_token
+
+    def get_headers(self, include_auth: bool = True, force_refresh: bool = False) -> dict[str, str]:
+        headers = {"User-Agent": "Mozilla/5.0 (RaspberryPi; Linux armv7l) RPiMediaAgent/1.0"}
+        if include_auth:
+            token = self.get_valid_token(force_refresh=force_refresh)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        return headers
 
 
 class LocalDatabase:
@@ -120,10 +253,12 @@ class LocalDatabase:
 
 class CacheManager:
 
-    def __init__(self, cache_dir: Path, db: LocalDatabase):
+    def __init__(self, cache_dir: Path, db: LocalDatabase, auth: DeviceAuthManager, use_mock: bool):
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.db = db
+        self.auth = auth
+        self.use_mock = use_mock
 
     @staticmethod
     def calculate_sha256(filepath: Path) -> str:
@@ -150,14 +285,19 @@ class CacheManager:
         print(f"[CACHE] Pobieranie nowego pliku na dysk: {filename}...")
         try:
             temp_path = target_path.with_suffix(target_path.suffix + ".part")
-            headers = {"User-Agent": "Mozilla/5.0 (RaspberryPi; Linux armv7l) RPiMediaAgent/1.0"}
-            if not USE_MOCK_API:
-                headers["Authorization"] = f"Bearer {JWT_TOKEN}"
+            is_internal_api = not self.use_mock and url.startswith(API_ORIGIN)
+            headers = self.auth.get_headers(include_auth=is_internal_api)
 
-            with requests.get(url, headers=headers, stream=True, timeout=15) as r:
-                r.raise_for_status()
+            resp = requests.get(url, headers=headers, stream=True, timeout=15, verify=self.auth.verify_ssl)
+            if resp.status_code == 401 and is_internal_api:
+                resp.close()
+                headers = self.auth.get_headers(include_auth=True, force_refresh=True)
+                resp = requests.get(url, headers=headers, stream=True, timeout=15, verify=self.auth.verify_ssl)
+
+            with resp:
+                resp.raise_for_status()
                 with open(temp_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=65536):
+                    for chunk in resp.iter_content(chunk_size=65536):
                         if chunk:
                             f.write(chunk)
 
@@ -175,7 +315,7 @@ class CacheManager:
                 sha256=actual_sha256,
                 media_type=media_type
             )
-            print(f"[CACHE] Zapisano na stałe w lokalnym cache: {filename} (SHA-256: {actual_sha256[:12]}...)")
+            print(f"[CACHE] Zapisano w lokalnym cache: {filename} (SHA-256: {actual_sha256[:12]}...)")
             return True
 
         except Exception as e:
@@ -192,30 +332,82 @@ class CacheManager:
 
 class SyncAgent(threading.Thread):
 
-    def __init__(self, db: LocalDatabase, cache: CacheManager, interval: int = 15):
+    def __init__(
+        self,
+        db: LocalDatabase,
+        cache: CacheManager,
+        auth: DeviceAuthManager,
+        use_mock: bool,
+        interval: int = 15
+    ):
         super().__init__(daemon=True)
         self.db = db
         self.cache = cache
+        self.auth = auth
+        self.use_mock = use_mock
         self.interval = interval
         self.running = True
+        self._ensure_mock_manifest()
+
+    def _ensure_mock_manifest(self):
+        if self.use_mock and not MOCK_MANIFEST_PATH.exists():
+            sample_manifest = {
+                "playlist_name": "Playlista Testowa RPi",
+                "items": [
+                    {
+                        "file_id": "img_1",
+                        "filename": "plansza_1.jpg",
+                        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Fronalpstock_big.jpg/1280px-Fronalpstock_big.jpg",
+                        "media_type": "image",
+                        "duration_sec": 4,
+                        "sha256": None
+                    },
+                    {
+                        "file_id": "img_2",
+                        "filename": "plansza_2.jpg",
+                        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Camponotus_flavomarginatus_ant.jpg/1280px-Camponotus_flavomarginatus_ant.jpg",
+                        "media_type": "image",
+                        "duration_sec": 4,
+                        "sha256": None
+                    },
+                    {
+                        "file_id": "img_3",
+                        "filename": "plansza_3.jpg",
+                        "url": "https://www.w3schools.com/css/img_5terre.jpg",
+                        "media_type": "image",
+                        "duration_sec": 4,
+                        "sha256": None
+                    }
+                ]
+            }
+            with open(MOCK_MANIFEST_PATH, "w", encoding="utf-8") as f:
+                json.dump(sample_manifest, f, indent=4, ensure_ascii=False)
+            print(f"[AGENT] Utworzono testowy manifest: {MOCK_MANIFEST_PATH.name}")
 
     def fetch_remote_manifest(self) -> dict | None:
-        if USE_MOCK_API:
+        if self.use_mock:
             try:
                 with open(MOCK_MANIFEST_PATH, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
                 print(f"[AGENT] Błąd odczytu manifestu: {e}")
                 return None
-        else:
-            headers = {"Authorization": f"Bearer {JWT_TOKEN}"}
-            try:
-                resp = requests.get(API_BASE_URL, headers=headers, timeout=10)
-                resp.raise_for_status()
-                return resp.json()
-            except Exception as e:
-                print(f"[AGENT] Brak połączenia z API ({e}) – odtwarzanie z lokalnego cache SQLite.")
-                return None
+
+        try:
+            headers = self.auth.get_headers(include_auth=True)
+            resp = requests.get(SYNC_ENDPOINT, headers=headers, timeout=10, verify=self.auth.verify_ssl)
+
+
+            if resp.status_code == 401:
+                print("[AUTH] Token JWT wygasł (401) – ponowne logowanie urządzenia...")
+                headers = self.auth.get_headers(include_auth=True, force_refresh=True)
+                resp = requests.get(SYNC_ENDPOINT, headers=headers, timeout=10, verify=self.auth.verify_ssl)
+
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            print(f"[AGENT] Brak połączenia z API ({e}) – odtwarzanie z lokalnego cache SQLite.")
+            return None
 
     def sync_once(self):
         manifest = self.fetch_remote_manifest()
@@ -313,10 +505,30 @@ class MediaPlayerEngine:
 
 
 if __name__ == "__main__":
-    database = LocalDatabase(DB_PATH)
-    cache_manager = CacheManager(CACHE_DIR, database)
+    parser = argparse.ArgumentParser(description="VideoPresenter Raspberry Pi Agent")
+    parser.add_argument("--pair-code", type=str, help="Jednorazowy kod parowania od administratora (ważny 5 min)")
+    parser.add_argument("--live", action="store_true", help="Wymuś komunikację z prawdziwym VideoPresenter API zamiast mock_manifest.json")
+    parser.add_argument("--insecure", action="store_true", help="Pomiń weryfikację certyfikatu SSL (dla lokalnego HTTPS self-signed)")
+    args = parser.parse_args()
 
-    agent = SyncAgent(database, cache_manager, interval=SYNC_INTERVAL_SEC)
+    use_mock_mode = USE_MOCK_API and not args.live and not args.pair_code
+    auth_manager = DeviceAuthManager(CREDENTIALS_FILE, verify_ssl=not args.insecure)
+
+    if not use_mock_mode:
+        if args.pair_code:
+            if not auth_manager.pair_device(args.pair_code):
+                raise SystemExit("[AUTH] Parowanie zakończone niepowodzeniem.")
+        elif not auth_manager.is_paired():
+            code = input("Podaj 5-minutowy kod parowania (pairCode) z panelu administratora: ")
+            if not auth_manager.pair_device(code):
+                raise SystemExit("[AUTH] Parowanie zakończone niepowodzeniem.")
+
+        auth_manager.login_device()
+
+    database = LocalDatabase(DB_PATH)
+    cache_manager = CacheManager(CACHE_DIR, database, auth_manager, use_mock=use_mock_mode)
+
+    agent = SyncAgent(database, cache_manager, auth_manager, use_mock=use_mock_mode, interval=SYNC_INTERVAL_SEC)
     agent.sync_once()
     agent.start()
 
