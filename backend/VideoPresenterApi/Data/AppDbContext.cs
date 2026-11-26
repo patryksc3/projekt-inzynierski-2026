@@ -8,6 +8,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<MediaItem> MediaItems => Set<MediaItem>();
+    public DbSet<Playlist> Playlists => Set<Playlist>();
+    public DbSet<PlaylistItem> PlaylistItems => Set<PlaylistItem>();
+    public DbSet<Schedule> Schedules => Set<Schedule>();
+    public DbSet<ScheduleDevice> ScheduleDevices => Set<ScheduleDevice>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,5 +63,35 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany()
             .HasForeignKey(m => m.UploadedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        var playlist = modelBuilder.Entity<Playlist>();
+        playlist.ToTable("Playlists");
+        playlist.HasKey(p => p.Id);
+        playlist.Property(p => p.Name).HasMaxLength(128).IsRequired();
+
+        var playlistItem = modelBuilder.Entity<PlaylistItem>();
+        playlistItem.ToTable("PlaylistItems");
+        playlistItem.HasKey(i => i.Id);
+        playlistItem.HasIndex(i => new { i.PlaylistId, i.Index }).IsUnique();
+        playlistItem.HasOne(i => i.Playlist).WithMany(p => p.Items)
+            .HasForeignKey(i => i.PlaylistId).OnDelete(DeleteBehavior.Cascade);
+        playlistItem.HasOne(i => i.MediaItem).WithMany()
+            .HasForeignKey(i => i.MediaItemId).OnDelete(DeleteBehavior.Restrict);
+
+        var schedule = modelBuilder.Entity<Schedule>();
+        schedule.ToTable("Schedules");
+        schedule.HasKey(s => s.Id);
+        schedule.Property(s => s.Name).HasMaxLength(128).IsRequired();
+        schedule.HasIndex(s => new { s.StartsAt, s.EndsAt });
+        schedule.HasOne(s => s.Playlist).WithMany()
+            .HasForeignKey(s => s.PlaylistId).OnDelete(DeleteBehavior.Restrict);
+
+        var scheduleDevice = modelBuilder.Entity<ScheduleDevice>();
+        scheduleDevice.ToTable("ScheduleDevices");
+        scheduleDevice.HasKey(sd => new { sd.ScheduleId, sd.DeviceId });
+        scheduleDevice.HasOne(sd => sd.Schedule).WithMany(s => s.Devices)
+            .HasForeignKey(sd => sd.ScheduleId).OnDelete(DeleteBehavior.Cascade);
+        scheduleDevice.HasOne(sd => sd.Device).WithMany()
+            .HasForeignKey(sd => sd.DeviceId).OnDelete(DeleteBehavior.Cascade);
     }
 }

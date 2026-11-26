@@ -23,6 +23,8 @@ builder.Services.Configure<DevicePairingSettings>(builder.Configuration.GetSecti
 builder.Services.AddSingleton<IDevicePairCodeStore, DevicePairCodeStore>();
 builder.Services.AddScoped<IPasswordHasher<Device>, PasswordHasher<Device>>();
 builder.Services.AddScoped<IDevicesService, DevicesService>();
+builder.Services.AddScoped<IPlaylistsService, PlaylistsService>();
+builder.Services.AddScoped<ISchedulesService, SchedulesService>();
 
 var mediaSettings = builder.Configuration.GetSection(MediaStorageSettings.SectionName).Get<MediaStorageSettings>()
     ?? new MediaStorageSettings();
