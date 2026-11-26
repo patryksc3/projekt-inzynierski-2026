@@ -92,6 +92,94 @@ namespace VideoPresenterApi.Migrations
                     b.ToTable("MediaItems", (string)null);
                 });
 
+            modelBuilder.Entity("VideoPresenterApi.Models.Playlist", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Playlists", (string)null);
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.PlaylistItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DurationSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Index")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("MediaItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PlaylistId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MediaItemId");
+
+                    b.HasIndex("PlaylistId", "Index")
+                        .IsUnique();
+
+                    b.ToTable("PlaylistItems", (string)null);
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.Schedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("PlaylistId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlaylistId");
+
+                    b.HasIndex("StartsAt", "EndsAt");
+
+                    b.ToTable("Schedules", (string)null);
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.ScheduleDevice", b =>
+                {
+                    b.Property<Guid>("ScheduleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("ScheduleId", "DeviceId");
+
+                    b.HasIndex("DeviceId");
+
+                    b.ToTable("ScheduleDevices", (string)null);
+                });
+
             modelBuilder.Entity("VideoPresenterApi.Models.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -123,6 +211,65 @@ namespace VideoPresenterApi.Migrations
                         .HasForeignKey("UploadedByUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.PlaylistItem", b =>
+                {
+                    b.HasOne("VideoPresenterApi.Models.MediaItem", "MediaItem")
+                        .WithMany()
+                        .HasForeignKey("MediaItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VideoPresenterApi.Models.Playlist", "Playlist")
+                        .WithMany("Items")
+                        .HasForeignKey("PlaylistId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MediaItem");
+
+                    b.Navigation("Playlist");
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.Schedule", b =>
+                {
+                    b.HasOne("VideoPresenterApi.Models.Playlist", "Playlist")
+                        .WithMany()
+                        .HasForeignKey("PlaylistId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Playlist");
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.ScheduleDevice", b =>
+                {
+                    b.HasOne("VideoPresenterApi.Models.Device", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("VideoPresenterApi.Models.Schedule", "Schedule")
+                        .WithMany("Devices")
+                        .HasForeignKey("ScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Device");
+
+                    b.Navigation("Schedule");
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.Playlist", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("VideoPresenterApi.Models.Schedule", b =>
+                {
+                    b.Navigation("Devices");
                 });
 #pragma warning restore 612, 618
         }

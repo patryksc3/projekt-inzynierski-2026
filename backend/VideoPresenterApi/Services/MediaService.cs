@@ -93,18 +93,29 @@ public sealed class MediaService(
             .AsNoTracking()
             .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<DeleteMediaResult> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
         var item = await dbContext.MediaItems.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
         if (item is null)
         {
-            return false;
+            return new DeleteMediaResult(false, []);
+        }
+
+        var playlists = await dbContext.PlaylistItems
+            .Where(i => i.MediaItemId == id)
+            .Select(i => i.Playlist!.Name)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToListAsync(cancellationToken);
+        if (playlists.Count > 0)
+        {
+            return new DeleteMediaResult(true, playlists);
         }
 
         dbContext.MediaItems.Remove(item);
         await dbContext.SaveChangesAsync(cancellationToken);
         await storage.DeleteAsync(item.StorageKey, cancellationToken);
-        return true;
+        return new DeleteMediaResult(true, []);
     }
 
     public Stream? OpenContent(MediaItem item) => storage.OpenRead(item.StorageKey);

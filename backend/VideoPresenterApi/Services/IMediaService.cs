@@ -10,6 +10,11 @@ public enum UploadError
     UnsupportedType
 }
 
+public sealed record DeleteMediaResult(bool Found, IReadOnlyList<string> UsedInPlaylists)
+{
+    public bool InUse => UsedInPlaylists.Count > 0;
+}
+
 public sealed record UploadResult(MediaItem? Item, UploadError Error, string? Message = null);
 
 public interface IMediaService
@@ -20,7 +25,7 @@ public interface IMediaService
 
     Task<MediaItem?> GetAsync(Guid id, CancellationToken cancellationToken);
 
-    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
+    Task<DeleteMediaResult> DeleteAsync(Guid id, CancellationToken cancellationToken);
 
     Stream? OpenContent(MediaItem item);
 }
