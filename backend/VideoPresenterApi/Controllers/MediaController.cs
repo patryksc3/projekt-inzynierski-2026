@@ -70,7 +70,19 @@ public sealed class MediaController(IMediaService mediaService) : ControllerBase
             return Forbid();
         }
 
-        return await mediaService.DeleteAsync(id, cancellationToken) ? NoContent() : NotFound();
+        var result = await mediaService.DeleteAsync(id, cancellationToken);
+        if (!result.Found)
+        {
+            return NotFound();
+        }
+
+        return result.InUse
+            ? Conflict(new
+            {
+                error = $"Nie można usunąć pliku, jest używany w playlistach: {string.Join(", ", result.UsedInPlaylists)}.",
+                playlists = result.UsedInPlaylists
+            })
+            : NoContent();
     }
 
     [HttpGet("{id:guid}/content", Name = "GetMediaContent")]
