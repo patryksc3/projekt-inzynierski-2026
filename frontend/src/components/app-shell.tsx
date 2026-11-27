@@ -21,13 +21,14 @@ import {
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
-export type Page = 'dashboard' | 'library' | 'devices'
+export type Page = 'dashboard' | 'library' | 'devices' | 'playlists'
 
 const mainContentId = 'main-content'
 const workspaceLabels: Record<Page, string> = {
   dashboard: 'Pulpit',
   library: 'Biblioteka',
   devices: 'Urządzenia',
+  playlists: 'Playlisty',
 }
 
 export function PlayMark() {
@@ -83,13 +84,15 @@ function Navigation({
         <Monitor size={17} />
         Urządzenia
       </PageLink>
-      <span
-        className="navigation-link navigation-unavailable"
-        aria-disabled="true"
+      <PageLink
+        page="playlists"
+        navigate={navigate}
+        className={cn('navigation-link', page === 'playlists' && 'is-active')}
+        aria-current={page === 'playlists' ? 'page' : undefined}
       >
         <ListVideo size={17} />
-        Playlisty<small>Wkrótce</small>
-      </span>
+        Playlisty
+      </PageLink>
       <span
         className="navigation-link navigation-unavailable"
         aria-disabled="true"

@@ -23,9 +23,11 @@ import { AuthScreen } from '@/features/auth-screen'
 import { Dashboard } from '@/features/dashboard'
 import { Devices } from '@/features/devices'
 import { Library } from '@/features/library'
+import { Playlists } from '@/features/playlists'
 import { isUnauthorized } from '@/lib/api'
 import { contentQueryOptions } from '@/lib/content-query'
 import { devicesQueryKey, listDevices } from '@/lib/devices-api'
+import { listPlaylists, playlistsQueryKey } from '@/lib/playlists-api'
 import {
   listMedia,
   mediaQueryKey,
@@ -47,12 +49,14 @@ const pageTitles: Record<Page, string> = {
   dashboard: 'Pulpit',
   library: 'Biblioteka mediów',
   devices: 'Urządzenia',
+  playlists: 'Playlisty',
 }
 
 function currentPage(): Page {
   const hash = window.location.hash
   if (hash === '#library') return 'library'
   if (hash === '#devices') return 'devices'
+  if (hash === '#playlists') return 'playlists'
   return 'dashboard'
 }
 
@@ -78,6 +82,7 @@ export default function App() {
       queryKey: devicesQueryKey(ended.id),
       exact: true,
     })
+    queryClient.removeQueries({ queryKey: playlistsQueryKey(ended.id) })
   }
 
   const contentQuery = useQuery({
@@ -113,6 +118,20 @@ export default function App() {
     retry: false,
   })
   const { media = [], playlists = [], schedule = [] } = contentQuery.data ?? {}
+  const playlistsQuery = useQuery({
+    queryKey: playlistsQueryKey(session?.id),
+    queryFn: async ({ signal }) => {
+      if (!session) throw new Error('Zaloguj się, aby pobrać playlisty.')
+      try {
+        return await listPlaylists(session.token, signal)
+      } catch (error) {
+        if (isUnauthorized(error)) endSession(session, sessionExpiredMessage)
+        throw error
+      }
+    },
+    enabled: page === 'playlists' && !!session,
+    retry: false,
+  })
 
   useEffect(() => {
     const onHashChange = () => setPage(currentPage())
@@ -147,6 +166,7 @@ export default function App() {
     dashboard: contentQuery,
     library: libraryQuery,
     devices: devicesQuery,
+    playlists: playlistsQuery,
   }[page]
 
   return (
@@ -194,6 +214,13 @@ export default function App() {
         <Devices
           key={session.id}
           devices={devicesQuery.data}
+          session={session}
+          onSessionExpired={() => endSession(session, sessionExpiredMessage)}
+        />
+      ) : page === 'playlists' && playlistsQuery.data ? (
+        <Playlists
+          key={session.id}
+          playlists={playlistsQuery.data}
           session={session}
           onSessionExpired={() => endSession(session, sessionExpiredMessage)}
         />
