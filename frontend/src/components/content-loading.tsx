@@ -7,6 +7,7 @@ const loadingDescriptions: Record<Page, string> = {
   dashboard: 'Pobieranie materiałów i playlist.',
   library: 'Pobieranie biblioteki mediów.',
   devices: 'Pobieranie listy urządzeń.',
+  playlists: 'Pobieranie playlist.',
 }
 
 export function ContentLoading({
@@ -56,7 +57,7 @@ export function ContentLoading({
               <Skeleton className="loading-panel" />
             </div>
           </>
-        ) : page === 'devices' ? (
+        ) : page === 'devices' || page === 'playlists' ? (
           <div className="surface loading-table">
             {Array.from({ length: 3 }, (_, i) => (
               <Skeleton className="skeleton-row" key={i} />
