@@ -2,10 +2,12 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import stat
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 import mpv
 import requests
@@ -19,15 +21,50 @@ DB_PATH = BASE_DIR / "agent_data.db"
 MOCK_MANIFEST_PATH = BASE_DIR / "mock_manifest.json"
 CREDENTIALS_FILE = BASE_DIR / ".device_credential"
 
-API_ORIGIN = os.getenv("RPI_API_ORIGIN", "https://localhost:5001").rstrip("/")
+API_ORIGIN = os.getenv("RPI_API_ORIGIN", "https://localhost:7169").rstrip("/")
 PAIR_ENDPOINT = f"{API_ORIGIN}/api/devices/get-credentials"
 LOGIN_ENDPOINT = f"{API_ORIGIN}/api/devices/login"
-SYNC_ENDPOINT = os.getenv("RPI_SYNC_URL", f"{API_ORIGIN}/api/media")
+SYNC_ENDPOINT = os.getenv("RPI_SYNC_URL", f"{API_ORIGIN}/api/schedules/device")
 
 USE_MOCK_API = os.getenv("RPI_USE_MOCK", "true").lower() == "true"
 SYNC_INTERVAL_SEC = 15
 
 JWT_REFRESH_MARGIN_SEC = 13 * 60
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".ts", ".mpeg", ".mpg"}
+
+
+def normalize_media_type(raw_type: str | None, filename: str) -> str:
+    if raw_type:
+        rt = str(raw_type).lower()
+        if "video" in rt:
+            return "video"
+        if "image" in rt or "photo" in rt:
+            return "image"
+    if Path(filename).suffix.lower() in VIDEO_EXTENSIONS:
+        return "video"
+    return "image"
+
+
+def parse_iso_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    s = value.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    s = re.sub(r"\.(\d+)", lambda m: "." + m.group(1)[:6].ljust(6, "0"), s)
+    try:
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def safe_cache_filename(file_id: str, original_name: str) -> str:
+    clean_name = Path(original_name).name or f"{file_id}.bin"
+    clean_name = re.sub(r"[^A-Za-z0-9._-]", "_", clean_name)
+    return f"{file_id}_{clean_name}"
 
 
 class DeviceAuthManager:
@@ -81,8 +118,7 @@ class DeviceAuthManager:
             print(f"[AUTH] Błąd podczas parowania urządzenia: {e}")
             return False
 
-    def login_device(self) -> bool:
-
+    def login_device(self) -> str:
         try:
             password = self._load_password()
             resp = requests.post(
@@ -91,6 +127,11 @@ class DeviceAuthManager:
                 timeout=10,
                 verify=self.verify_ssl
             )
+
+            if resp.status_code in (401, 403):
+                print(f"[AUTH] Odrzucono poświadczenia urządzenia (HTTP {resp.status_code}).")
+                return "unauthorized"
+
             resp.raise_for_status()
 
             token = None
@@ -99,8 +140,7 @@ class DeviceAuthManager:
                 if isinstance(data, str):
                     token = data.strip()
                 elif isinstance(data, dict):
-
-                    for key in ("token", "accessToken", "jwt", "jwtToken", "deviceToken", "Token", "access_token"):
+                    for key in ("token", "accessToken", "jwt", "jwtToken", "deviceToken", "Token", "AccessToken", "access_token"):
                         if isinstance(data.get(key), str) and data.get(key):
                             token = data[key].strip()
                             break
@@ -112,24 +152,28 @@ class DeviceAuthManager:
                     if not token:
                         print(f"[AUTH] Otrzymany JSON z /api/devices/login: {data}")
             except ValueError:
-
                 raw_text = resp.text.strip().strip('"')
                 if raw_text.startswith("eyJ"):
                     token = raw_text
 
             if not token:
                 print(f"[AUTH] Błąd logowania: brak tokenu JWT w odpowiedzi ({resp.text}).")
-                return False
+                return "offline"
 
             with self._lock:
                 self._jwt_token = token
                 self._token_expires_at = time.time() + JWT_REFRESH_MARGIN_SEC
 
             print("[AUTH] Pobrano nowy token JWT urządzenia (ważny 15 min).")
-            return True
+            return "ok"
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code in (401, 403):
+                return "unauthorized"
+            print(f"[AUTH] Błąd serwera podczas logowania (/api/devices/login): {e}")
+            return "offline"
         except Exception as e:
-            print(f"[AUTH] Błąd logowania urządzenia (/api/devices/login): {e}")
-            return False
+            print(f"[AUTH] Brak łączności przy logowaniu (/api/devices/login): {e}")
+            return "offline"
 
     def get_valid_token(self, force_refresh: bool = False) -> str | None:
         with self._lock:
@@ -140,7 +184,7 @@ class DeviceAuthManager:
             )
 
         if needs_refresh:
-            if not self.login_device():
+            if self.login_device() != "ok":
                 return None
 
         with self._lock:
@@ -178,10 +222,23 @@ class LocalDatabase:
                 )
             """)
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS playlist_items (
-                    position INTEGER PRIMARY KEY,
+                CREATE TABLE IF NOT EXISTS schedules (
+                    schedule_id TEXT PRIMARY KEY,
+                    name TEXT,
+                    starts_at TEXT NOT NULL,
+                    ends_at TEXT NOT NULL,
+                    playlist_id TEXT,
+                    playlist_name TEXT
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS schedule_items (
+                    schedule_id TEXT NOT NULL,
+                    position INTEGER NOT NULL,
                     file_id TEXT NOT NULL,
                     duration_sec INTEGER DEFAULT 5,
+                    PRIMARY KEY (schedule_id, position),
+                    FOREIGN KEY (schedule_id) REFERENCES schedules (schedule_id),
                     FOREIGN KEY (file_id) REFERENCES media_files (file_id)
                 )
             """)
@@ -207,27 +264,57 @@ class LocalDatabase:
             cursor.execute("SELECT filename, local_path, sha256 FROM media_files WHERE file_id = ?", (file_id,))
             return cursor.fetchone()
 
-    def update_playlist(self, items: list[dict]):
+    def replace_schedules(self, schedules: list[dict]):
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM playlist_items")
-            for idx, item in enumerate(items):
+            cursor.execute("DELETE FROM schedule_items")
+            cursor.execute("DELETE FROM schedules")
+            for sched in schedules:
                 cursor.execute("""
-                    INSERT INTO playlist_items (position, file_id, duration_sec)
-                    VALUES (?, ?, ?)
-                """, (idx, item["file_id"], item.get("duration_sec", 5)))
+                    INSERT INTO schedules (schedule_id, name, starts_at, ends_at, playlist_id, playlist_name)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    sched["schedule_id"],
+                    sched.get("name", ""),
+                    sched["starts_at"],
+                    sched["ends_at"],
+                    sched.get("playlist_id", ""),
+                    sched.get("playlist_name", "")
+                ))
+                for pos, item in enumerate(sched["items"]):
+                    cursor.execute("""
+                        INSERT INTO schedule_items (schedule_id, position, file_id, duration_sec)
+                        VALUES (?, ?, ?, ?)
+                    """, (sched["schedule_id"], pos, item["file_id"], item["duration_sec"]))
             conn.commit()
 
-    def get_active_playlist(self) -> list[dict]:
+    def get_active_schedule_playlist(self) -> tuple[str | None, str, list[dict]]:
+        now_utc = datetime.now(timezone.utc)
         with self._get_conn() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT schedule_id, name, starts_at, ends_at, playlist_name FROM schedules")
+            active_candidates = []
+            for row in cursor.fetchall():
+                sched_id, sched_name, starts_str, ends_str, playlist_name = row
+                starts_dt = parse_iso_utc(starts_str)
+                ends_dt = parse_iso_utc(ends_str)
+                if starts_dt and ends_dt and starts_dt <= now_utc <= ends_dt:
+                    active_candidates.append((starts_dt, sched_id, sched_name or playlist_name or sched_id))
+
+            if not active_candidates:
+                return None, "", []
+
+            active_candidates.sort(key=lambda x: x[0], reverse=True)
+            _, active_id, active_label = active_candidates[0]
+
             cursor.execute("""
-                SELECT p.position, m.filename, m.local_path, m.media_type, p.duration_sec
-                FROM playlist_items p
-                JOIN media_files m ON p.file_id = m.file_id
-                ORDER BY p.position ASC
-            """)
-            return [
+                SELECT s.position, m.filename, m.local_path, m.media_type, s.duration_sec
+                FROM schedule_items s
+                JOIN media_files m ON s.file_id = m.file_id
+                WHERE s.schedule_id = ?
+                ORDER BY s.position ASC
+            """, (active_id,))
+            items = [
                 {
                     "position": r[0],
                     "filename": r[1],
@@ -237,6 +324,7 @@ class LocalDatabase:
                 }
                 for r in cursor.fetchall()
             ]
+            return active_id, active_label, items
 
     def remove_unused_files(self, active_file_ids: set[str]) -> list[str]:
         with self._get_conn() as conn:
@@ -273,26 +361,32 @@ class CacheManager:
         filename = item["filename"]
         url = item["url"]
         expected_sha256 = item.get("sha256")
-        media_type = item.get("media_type", "image")
+        media_type = normalize_media_type(item.get("media_type"), filename)
 
-        target_path = self.cache_dir / filename
+        target_path = self.cache_dir / safe_cache_filename(file_id, filename)
         cached_record = self.db.get_cached_file(file_id)
 
-        if cached_record and target_path.exists() and target_path.stat().st_size > 0:
-            if not expected_sha256 or cached_record[2] == expected_sha256:
-                return True
+        if cached_record:
+            existing_path = Path(cached_record[1])
+            if existing_path.exists() and existing_path.stat().st_size > 0:
+                if not expected_sha256 or cached_record[2] == expected_sha256:
+                    return True
 
         print(f"[CACHE] Pobieranie nowego pliku na dysk: {filename}...")
+        temp_path = target_path.with_suffix(target_path.suffix + ".part")
         try:
-            temp_path = target_path.with_suffix(target_path.suffix + ".part")
             is_internal_api = not self.use_mock and url.startswith(API_ORIGIN)
             headers = self.auth.get_headers(include_auth=is_internal_api)
+            if is_internal_api and "Authorization" not in headers:
+                return False
 
-            resp = requests.get(url, headers=headers, stream=True, timeout=15, verify=self.auth.verify_ssl)
+            resp = requests.get(url, headers=headers, stream=True, timeout=30, verify=self.auth.verify_ssl)
             if resp.status_code == 401 and is_internal_api:
                 resp.close()
                 headers = self.auth.get_headers(include_auth=True, force_refresh=True)
-                resp = requests.get(url, headers=headers, stream=True, timeout=15, verify=self.auth.verify_ssl)
+                if "Authorization" not in headers:
+                    return False
+                resp = requests.get(url, headers=headers, stream=True, timeout=30, verify=self.auth.verify_ssl)
 
             with resp:
                 resp.raise_for_status()
@@ -319,6 +413,7 @@ class CacheManager:
             return True
 
         except Exception as e:
+            temp_path.unlink(missing_ok=True)
             print(f"[CACHE] Błąd pobierania {filename}: {e}")
             return False
 
@@ -347,6 +442,7 @@ class SyncAgent(threading.Thread):
         self.use_mock = use_mock
         self.interval = interval
         self.running = True
+        self._was_offline = False
         self._ensure_mock_manifest()
 
     def _ensure_mock_manifest(self):
@@ -384,7 +480,7 @@ class SyncAgent(threading.Thread):
                 json.dump(sample_manifest, f, indent=4, ensure_ascii=False)
             print(f"[AGENT] Utworzono testowy manifest: {MOCK_MANIFEST_PATH.name}")
 
-    def fetch_remote_manifest(self) -> dict | None:
+    def fetch_remote_schedules(self) -> dict | list | None:
         if self.use_mock:
             try:
                 with open(MOCK_MANIFEST_PATH, "r", encoding="utf-8") as f:
@@ -395,39 +491,160 @@ class SyncAgent(threading.Thread):
 
         try:
             headers = self.auth.get_headers(include_auth=True)
-            resp = requests.get(SYNC_ENDPOINT, headers=headers, timeout=10, verify=self.auth.verify_ssl)
+            if "Authorization" not in headers:
+                if not self._was_offline:
+                    print("[AGENT] Brak sieci lub tokenu JWT – tryb offline (odtwarzanie z lokalnego cache SQLite).")
+                    self._was_offline = True
+                return None
 
+            resp = requests.get(SYNC_ENDPOINT, headers=headers, timeout=10, verify=self.auth.verify_ssl)
 
             if resp.status_code == 401:
                 print("[AUTH] Token JWT wygasł (401) – ponowne logowanie urządzenia...")
                 headers = self.auth.get_headers(include_auth=True, force_refresh=True)
+                if "Authorization" not in headers:
+                    if not self._was_offline:
+                        print("[AGENT] Nie udało się odnowić tokenu – tryb offline (cache SQLite).")
+                        self._was_offline = True
+                    return None
                 resp = requests.get(SYNC_ENDPOINT, headers=headers, timeout=10, verify=self.auth.verify_ssl)
 
             resp.raise_for_status()
+            if self._was_offline:
+                print("[AGENT] Przywrócono połączenie z API – wznowiono synchronizację.")
+                self._was_offline = False
             return resp.json()
         except Exception as e:
-            print(f"[AGENT] Brak połączenia z API ({e}) – odtwarzanie z lokalnego cache SQLite.")
+            if not self._was_offline:
+                print(f"[AGENT] Brak połączenia z API ({e}) – tryb offline (odtwarzanie z lokalnego cache SQLite).")
+                self._was_offline = True
             return None
 
+    def _normalize_payload_to_schedules(self, payload: dict | list) -> list[dict] | None:
+        if isinstance(payload, dict) and "items" in payload:
+            return [
+                {
+                    "schedule_id": "mock_schedule",
+                    "name": payload.get("playlist_name", "Mock"),
+                    "starts_at": "1970-01-01T00:00:00+00:00",
+                    "ends_at": "2099-12-31T23:59:59+00:00",
+                    "playlist_id": "mock_playlist",
+                    "playlist_name": payload.get("playlist_name", "Mock"),
+                    "raw_items": payload["items"]
+                }
+            ]
+
+        if not isinstance(payload, list):
+            return None
+
+        normalized = []
+        for entry in payload:
+            if not isinstance(entry, dict):
+                continue
+            playlist = entry.get("playlist") or {}
+            raw_items = playlist.get("items")
+            if not isinstance(raw_items, list):
+                continue
+
+            sched_id = str(entry.get("id") or "")
+            starts_at = entry.get("startsAt") or entry.get("starts_at")
+            ends_at = entry.get("endsAt") or entry.get("ends_at")
+            if not sched_id or not starts_at or not ends_at:
+                continue
+
+            sorted_items = sorted(raw_items, key=lambda x: x.get("index", 0))
+            normalized.append({
+                "schedule_id": sched_id,
+                "name": entry.get("name") or "",
+                "starts_at": starts_at,
+                "ends_at": ends_at,
+                "playlist_id": str(playlist.get("id") or ""),
+                "playlist_name": playlist.get("name") or "",
+                "raw_items": sorted_items
+            })
+        return normalized
+
     def sync_once(self):
-        manifest = self.fetch_remote_manifest()
-        if not manifest or "items" not in manifest:
+        payload = self.fetch_remote_schedules()
+        if payload is None:
             return
 
-        ready_items = []
-        active_ids = set()
+        schedules_raw = self._normalize_payload_to_schedules(payload)
+        if schedules_raw is None:
+            print(f"[AGENT] Nieoczekiwany format odpowiedzi z API: {payload}")
+            return
 
-        for item in manifest["items"]:
-            if self.cache.ensure_file_cached(item):
-                ready_items.append(item)
-                active_ids.add(item["file_id"])
+        ready_schedules = []
+        active_file_ids = set()
 
-        if ready_items:
-            self.db.update_playlist(ready_items)
-            self.cache.cleanup_orphaned_files(active_ids)
+        for sched in schedules_raw:
+            ready_items = []
+            for raw_item in sched["raw_items"]:
+                raw_id = (
+                    raw_item.get("mediaItemId")
+                    or raw_item.get("file_id")
+                    or raw_item.get("id")
+                )
+                if raw_id is None:
+                    continue
+
+                file_id = str(raw_id)
+                filename = (
+                    raw_item.get("originalName")
+                    or raw_item.get("filename")
+                    or raw_item.get("fileName")
+                    or raw_item.get("name")
+                    or f"{file_id}.bin"
+                )
+                raw_type = (
+                    raw_item.get("kind")
+                    or raw_item.get("media_type")
+                    or raw_item.get("mediaType")
+                    or raw_item.get("contentType")
+                )
+                media_type = normalize_media_type(raw_type, filename)
+
+                raw_duration = (
+                    raw_item.get("durationSeconds")
+                    if raw_item.get("durationSeconds") is not None
+                    else raw_item.get("duration_sec")
+                )
+                try:
+                    duration_val = int(raw_duration) if raw_duration is not None else 0
+                except (TypeError, ValueError):
+                    duration_val = 0
+                if media_type == "image" and duration_val <= 0:
+                    duration_val = 5
+
+                item = {
+                    "file_id": file_id,
+                    "filename": filename,
+                    "url": raw_item.get("url") or raw_item.get("downloadUrl") or f"{API_ORIGIN}/api/media/{file_id}/content",
+                    "media_type": media_type,
+                    "duration_sec": duration_val,
+                    "sha256": raw_item.get("sha256")
+                }
+
+                if self.cache.ensure_file_cached(item):
+                    ready_items.append(item)
+                    active_file_ids.add(file_id)
+
+            if ready_items:
+                ready_schedules.append({
+                    "schedule_id": sched["schedule_id"],
+                    "name": sched["name"],
+                    "starts_at": sched["starts_at"],
+                    "ends_at": sched["ends_at"],
+                    "playlist_id": sched["playlist_id"],
+                    "playlist_name": sched["playlist_name"],
+                    "items": ready_items
+                })
+
+        self.db.replace_schedules(ready_schedules)
+        self.cache.cleanup_orphaned_files(active_file_ids)
 
     def run(self):
-        print("[AGENT] Uruchomiono wątek synchronizacji lokalnego cache w tle.")
+        print("[AGENT] Uruchomiono wątek synchronizacji harmonogramów i cache w tle.")
         while self.running:
             self.sync_once()
             time.sleep(self.interval)
@@ -438,11 +655,13 @@ class MediaPlayerEngine:
     def __init__(self, db: LocalDatabase):
         self.db = db
         self._file_loaded_event = threading.Event()
+        self._eof_event = threading.Event()
 
         self.player = mpv.MPV(
             vo="gpu",
             gpu_context="drm",
-            hwdec="auto-safe",
+            hwdec="no",
+            ao="alsa",
             image_display_duration="inf",
             osc=False,
             keep_open="yes",
@@ -456,6 +675,11 @@ class MediaPlayerEngine:
         def on_file_loaded(event):
             self._file_loaded_event.set()
 
+        @self.player.property_observer("eof-reached")
+        def on_eof_reached(_name, value):
+            if value and self._file_loaded_event.is_set():
+                self._eof_event.set()
+
         @self.player.on_key_press("q")
         def quit_binding():
             print("\n[PLAYER] Zamykanie agenta i odtwarzacza (klawisz 'q')...")
@@ -464,35 +688,53 @@ class MediaPlayerEngine:
 
     def play_from_cache_loop(self):
         print("[PLAYER] Start odtwarzania z lokalnego cache SQLite. Naciśnij 'q' lub Ctrl+C, aby zakończyć.")
+        waiting_logged = False
         try:
             while True:
-                playlist = self.db.get_active_playlist()
+                active_id, active_label, playlist = self.db.get_active_schedule_playlist()
 
                 if not playlist:
-                    print("[PLAYER] Oczekiwanie na pobranie plików do lokalnego cache...")
+                    if not waiting_logged:
+                        print("[PLAYER] Brak aktywnego harmonogramu lub oczekiwanie na pobranie plików...")
+                        self.player.command("stop")
+                        waiting_logged = True
                     time.sleep(2)
                     continue
 
+                waiting_logged = False
                 for item in playlist:
+                    current_id, _, _ = self.db.get_active_schedule_playlist()
+                    if current_id != active_id:
+                        break
+
                     file_path = Path(item["local_path"])
                     if not file_path.exists():
                         continue
 
-                    duration = item.get("duration_sec", 5)
-                    media_type = item.get("media_type", "image")
+                    duration = item.get("duration_sec") or 5
+                    media_type = normalize_media_type(item.get("media_type"), item["filename"])
 
-                    print(f"[PLAYER] Odtwarzanie z cache [{item['position'] + 1}/{len(playlist)}]: {item['filename']} ({duration}s)")
+                    print(f"[PLAYER] [{active_label}] [{item['position'] + 1}/{len(playlist)}]: {item['filename']} ({media_type})")
 
                     self._file_loaded_event.clear()
+                    self._eof_event.clear()
+                    if media_type == "image":
+                        self.player.vf = "lavfi=[scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2]"
+                    else:
+                        self.player.vf = ""
                     self.player.play(str(file_path))
                     self.player.pause = False
 
-                    self._file_loaded_event.wait(timeout=5)
+                    if not self._file_loaded_event.wait(timeout=5):
+                        print(f"[PLAYER] Pominięto nieodpowiadający plik: {item['filename']}")
+                        continue
 
                     if media_type == "image":
-                        time.sleep(duration)
+                        time.sleep(max(1, int(duration)))
                     else:
-                        self.player.wait_for_property("eof-reached", lambda eof: bool(eof))
+                        while not self._eof_event.wait(timeout=0.2):
+                            if self.player.eof_reached or self.player.idle_active:
+                                break
 
         except KeyboardInterrupt:
             print("\n[PLAYER] Przerwano działanie przez użytkownika (Ctrl+C).")
@@ -523,7 +765,15 @@ if __name__ == "__main__":
             if not auth_manager.pair_device(code):
                 raise SystemExit("[AUTH] Parowanie zakończone niepowodzeniem.")
 
-        auth_manager.login_device()
+        login_status = auth_manager.login_device()
+        if login_status == "unauthorized":
+            print("[AUTH] Zapisane hasło urządzenia zostało odrzucone (401/403). Wymagane ponowne parowanie.")
+            CREDENTIALS_FILE.unlink(missing_ok=True)
+            code = input("Podaj nowy 5-minutowy kod parowania (pairCode): ")
+            if not auth_manager.pair_device(code) or auth_manager.login_device() != "ok":
+                raise SystemExit("[AUTH] Parowanie i logowanie zakończone niepowodzeniem.")
+        elif login_status != "ok":
+            print("[AUTH] Brak połączenia z API przy starcie – uruchamianie w trybie offline z lokalnego cache.")
 
     database = LocalDatabase(DB_PATH)
     cache_manager = CacheManager(CACHE_DIR, database, auth_manager, use_mock=use_mock_mode)
